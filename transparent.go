@@ -6,11 +6,12 @@ import (
 	"crypto/tls"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
 	"net/url"
-	"regexp"
+	"strings"
 
 	"github.com/elazarl/goproxy"
 	"github.com/inconshreveable/go-vhost"
@@ -23,7 +24,6 @@ func orPanic(err error) {
 }
 
 func main() {
-	panic("new deployment succeeded")
 	verbose := flag.Bool("v", true, "should every proxy request be logged to stdout")
 	http_addr := flag.String("httpaddr", ":3129", "proxy http listen address")
 	https_addr := flag.String("httpsaddr", ":3128", "proxy https listen address")
@@ -48,40 +48,31 @@ func main() {
 	if err != nil {
 		log.Fatalf("Unable to load certificate - %v", err)
 	}
-	connectAction := &goproxy.ConnectAction{
-		Action:    goproxy.ConnectMitm,
-		TlsConfig: &tls.Config{},
-		Ca:        &cert,
-	}
-	var AlwaysMitm goproxy.FuncHttpsHandler = func(host string, ctx *goproxy.ProxyCtx) (*goproxy.ConnectAction, string) {
-		return connectAction, host
-	}
-	proxy.OnRequest(goproxy.ReqHostMatches(regexp.MustCompile("^.*$"))).
-		HandleConnect(AlwaysMitm)
-	proxy.OnRequest(goproxy.ReqHostMatches(regexp.MustCompile("^.*:80$"))).
-		HijackConnect(func(req *http.Request, client net.Conn, ctx *goproxy.ProxyCtx) {
-		defer func() {
-			if e := recover(); e != nil {
-				ctx.Logf("error connecting to remote: %v", e)
-				client.Write([]byte("HTTP/1.1 500 Cannot reach destination\r\n\r\n"))
+
+	var whiteListHandler goproxy.FuncReqHandler = func(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+		textualResponse := []byte("Requested destination not in whitelist")
+		ctx.Logf("Filtering saw request - %v", req)
+		if strings.Contains(req.Host, "google.com") {
+			return nil, &http.Response{
+				StatusCode:    400,
+				ProtoMajor:    1,
+				ProtoMinor:    1,
+				Request:       ctx.Req,
+				Header:        http.Header{},
+				Body:          ioutil.NopCloser(bytes.NewBuffer(textualResponse)),
+				ContentLength: int64(len(textualResponse)),
 			}
-			client.Close()
-		}()
-		clientBuf := bufio.NewReadWriter(bufio.NewReader(client), bufio.NewWriter(client))
-		remote, err := connectDial(proxy, "tcp", req.URL.Host)
-		orPanic(err)
-		remoteBuf := bufio.NewReadWriter(bufio.NewReader(remote), bufio.NewWriter(remote))
-		for {
-			ctx.Logf("In for loop for request - #v", req.URL)
-			req, err := http.ReadRequest(clientBuf.Reader)
-			orPanic(err)
-			orPanic(req.Write(remoteBuf))
-			orPanic(remoteBuf.Flush())
-			resp, err := http.ReadResponse(remoteBuf.Reader, req)
-			orPanic(err)
-			orPanic(resp.Write(clientBuf.Writer))
-			orPanic(clientBuf.Flush())
 		}
+		return req, nil
+	}
+	proxy.OnRequest().DoFunc(whiteListHandler)
+
+	proxy.OnRequest().HandleConnectFunc(func(host string, ctx *goproxy.ProxyCtx) (*goproxy.ConnectAction, string) {
+		return &goproxy.ConnectAction{
+			Action:    goproxy.ConnectMitm,
+			TlsConfig: &tls.Config{},
+			Ca:        &cert,
+		}, host
 	})
 
 	go func() {
