@@ -6,24 +6,90 @@ import (
 	"crypto/tls"
 	"flag"
 	"fmt"
+	"html/template"
 	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
 	"net/url"
-	"strings"
 
 	"github.com/elazarl/goproxy"
 	"github.com/inconshreveable/go-vhost"
 )
 
-func orPanic(err error) {
-	if err != nil {
-		panic(err)
+var whitelistAddChan = make(chan *url.URL)
+var whitelistCheckChan = make(chan *http.Request)
+var whitelistOkayChan = make(chan bool)
+
+var tmpl *template.Template
+
+func manageWhitelist() {
+	whitelistedHosts := make(map[string]struct{})
+	for {
+		select {
+		case add := <-whitelistAddChan:
+			whitelistedHosts[add.Host] = struct{}{}
+			log.Printf("Added %s", add.Host)
+		case check := <-whitelistCheckChan:
+			_, ok := whitelistedHosts[check.Host]
+			whitelistOkayChan <- ok
+		}
 	}
 }
 
+var whiteListHandler goproxy.FuncReqHandler = func(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+	buf := bytes.Buffer{}
+	whitelistCheckChan <- req
+	if <-whitelistOkayChan {
+		return req, nil
+	}
+	err := tmpl.ExecuteTemplate(&buf, "deny", map[string]*http.Request{"Request": req})
+	if err != nil {
+		buf.WriteString(fmt.Sprintf("<html><body>Requested destination not in whitelist, error writing template - %v", err))
+	}
+	return nil, &http.Response{
+		StatusCode:    400,
+		ProtoMajor:    1,
+		ProtoMinor:    1,
+		Request:       ctx.Req,
+		Header:        http.Header{},
+		Body:          ioutil.NopCloser(&buf),
+		ContentLength: int64(buf.Len()),
+	}
+}
+
+var whitelistService = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	URL := r.FormValue("url")
+	decURL, err := url.QueryUnescape(URL)
+	var realURL *url.URL
+	if err == nil {
+		realURL, err = url.Parse(decURL)
+	}
+	if err != nil {
+		w.WriteHeader(400)
+		err = tmpl.ExecuteTemplate(w, "error", map[string]interface{}{"Error": err})
+		if err != nil {
+			w.Write([]byte(fmt.Sprintf("Error adding site to whitelist, error writing template - %v", err)))
+		}
+		return
+	}
+	go func(r *url.URL) {
+		whitelistAddChan <- r
+	}(realURL)
+	http.Redirect(w, r, decURL, 301)
+})
+
 func main() {
+	var err error
+	tmpl, err = template.ParseFiles("template.html")
+	if err != nil {
+		log.Fatalf("Error parsing template - %v", err)
+	}
+	go manageWhitelist()
+	go func() {
+		err := http.ListenAndServe(":9000", whitelistService)
+		log.Fatalf("Error starting whitelist service - %v", err)
+	}()
 	verbose := flag.Bool("v", true, "should every proxy request be logged to stdout")
 	http_addr := flag.String("httpaddr", ":3129", "proxy http listen address")
 	https_addr := flag.String("httpsaddr", ":3128", "proxy https listen address")
@@ -49,22 +115,6 @@ func main() {
 		log.Fatalf("Unable to load certificate - %v", err)
 	}
 
-	var whiteListHandler goproxy.FuncReqHandler = func(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
-		textualResponse := []byte("Requested destination not in whitelist")
-		ctx.Logf("Filtering saw request - %v", req)
-		if strings.Contains(req.Host, "google.com") {
-			return nil, &http.Response{
-				StatusCode:    400,
-				ProtoMajor:    1,
-				ProtoMinor:    1,
-				Request:       ctx.Req,
-				Header:        http.Header{},
-				Body:          ioutil.NopCloser(bytes.NewBuffer(textualResponse)),
-				ContentLength: int64(len(textualResponse)),
-			}
-		}
-		return req, nil
-	}
 	proxy.OnRequest().DoFunc(whiteListHandler)
 
 	proxy.OnRequest().HandleConnectFunc(func(host string, ctx *goproxy.ProxyCtx) (*goproxy.ConnectAction, string) {
