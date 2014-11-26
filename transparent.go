@@ -20,11 +20,16 @@ import (
 var whitelistAddChan = make(chan *url.URL)
 var whitelistCheckChan = make(chan *http.Request)
 var whitelistOkayChan = make(chan bool)
+var whitelistBlockedChan = make(chan []*url.URL)
+var whitelistRequestBlockedChan = make(chan int)
 
 var tmpl *template.Template
 
 func manageWhitelist() {
 	whitelistedHosts := make(map[string]struct{})
+	stack := &Stack{
+		Max: 50,
+	}
 	for {
 		select {
 		case add := <-whitelistAddChan:
@@ -32,7 +37,23 @@ func manageWhitelist() {
 			log.Printf("Added %s", add.Host)
 		case check := <-whitelistCheckChan:
 			_, ok := whitelistedHosts[check.Host]
+			if !ok {
+				stack.Push(check.URL)
+			}
 			whitelistOkayChan <- ok
+		case num := <-whitelistRequestBlockedChan:
+			list := make([]*url.URL, 0, stack.Len())
+			for {
+				if len(list) == num {
+					break
+				}
+				elem := stack.Pop()
+				if elem == nil {
+					break
+				}
+				list = append(list, elem)
+			}
+			whitelistBlockedChan <- list
 		}
 	}
 }
@@ -59,24 +80,36 @@ var whiteListHandler goproxy.FuncReqHandler = func(req *http.Request, ctx *gopro
 }
 
 var whitelistService = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-	URL := r.FormValue("url")
-	decURL, err := url.QueryUnescape(URL)
-	var realURL *url.URL
-	if err == nil {
-		realURL, err = url.Parse(decURL)
-	}
-	if err != nil {
-		w.WriteHeader(400)
-		err = tmpl.ExecuteTemplate(w, "error", map[string]interface{}{"Error": err})
-		if err != nil {
-			w.Write([]byte(fmt.Sprintf("Error adding site to whitelist, error writing template - %v", err)))
+	switch r.URL.Path {
+	case "/add":
+		URL := r.FormValue("url")
+		decURL, err := url.QueryUnescape(URL)
+		var realURL *url.URL
+		if err == nil {
+			realURL, err = url.Parse(decURL)
 		}
-		return
+		if err != nil {
+			w.WriteHeader(400)
+			err = tmpl.ExecuteTemplate(w, "error", map[string]interface{}{"Error": err})
+			if err != nil {
+				w.Write([]byte(fmt.Sprintf("Error adding site to whitelist, error writing template - %v", err)))
+			}
+			return
+		}
+		go func(r *url.URL) {
+			whitelistAddChan <- r
+		}(realURL)
+		http.Redirect(w, r, decURL, 301)
+	case "/list":
+		whitelistRequestBlockedChan <- 20 // get up to the last 20
+		list := <-whitelistBlockedChan
+		err := tmpl.ExecuteTemplate(w, r.URL.Path, map[string]interface{}{"List": list})
+		if err != nil {
+			w.Write([]byte(fmt.Sprintf("Error fetching recently blocked sites - %v", err)))
+		}
+	default:
+		w.Write([]byte(fmt.Sprintf("Unable to handle path - %s", r.URL.Path)))
 	}
-	go func(r *url.URL) {
-		whitelistAddChan <- r
-	}(realURL)
-	http.Redirect(w, r, decURL, 301)
 })
 
 func main() {

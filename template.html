@@ -16,3 +16,14 @@
 	</body>
 </html>
 {{end}}
+
+{{define "/list"}}
+<html>
+	<body>
+		<h1>Recent blocked sites</h1>
+		{{range .List}}
+			<p>{{.}} <a href="http://proxy:9000/add?url={{urlquery .}}">Add it</a></p>
+		{{end}}
+	</body>
+</html>
+{{end}}
