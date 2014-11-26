@@ -1,10 +1,14 @@
-# Transparent Proxy
+# Whitelist Proxy
 
-This transparent example in goproxy is meant to show how to transparenty proxy and hijack all http and https connections while doing a man-in-the-middle to the TLS session.  It requires that goproxy sees all the packets traversing out to the internet.  Linux iptables rules deal with changing the source/destination IPs to act transparently, but you do need to setup your network configuration so that goproxy is a mandatory stop on the outgoing route.  Primarily you can do this by placing the proxy inline.  goproxy does not have any WCCP support itself; patches welcome.
+This transparent proxy does a man-in-the-middle on all http and https connections It requires that it sees all the packets in the route to the destination.  Linux iptables rules deal with changing the source/destination IPs to act transparently, but you do need to setup your network configuration the proxy is a mandatory stop on the outgoing route.  Primarily you can do this by placing the proxy inline.  whitelistproxy does not have any WCCP support itself; patches welcome.
+
+## Whitelist modifications
+
+Since this proxy by definition blocks anything that is not in the whitelist, this proxy includes a method by which users on the system can add sites to the whitelist.  This is a manual step so that only those explicitly authorized sites are reachable by clients on your network.
 
 ## Why not explicit?
 
-Transparent proxies are more difficult to maintain and setup from a server side, but they require no configuration on the client(s) which could be in unmanaged systems or systems that don't support a proxy configuration.  See the [eavesdropper example](https://github.com/elazarl/goproxy/blob/master/examples/eavesdropper/main.go) if you want to see an explicit proxy example.
+Transparent proxies are more difficult to maintain and setup from a server and network side, but they require no configuration on the client(s) which could be in unmanaged systems or systems that don't support a proxy configuration.
 
 ## Potential Issues
 
