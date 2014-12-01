@@ -3,7 +3,13 @@
 	<body>
 		<h1>Access Denied</h1>
 		<h2>{{.Request.Host}} is not in the whitelist.</h2>
-		<a href="http://proxy:9000/add?url={{urlquery .Request.URL}}">Add it</a>
+		{{range $_, $path := paths .Request.URL.Path}}
+			<a href="http://proxy:9000/add?url={{$.Request.URL}}&host={{$.Request.Host}}&match=false&path={{$path}}">Add {{$.Request.Host}}{{$path}}</a>
+		{{end}}
+		<a href="http://proxy:9000/add?url={{$.Request.URL}}&host={{$.Request.Host}}&match=false">Add {{$.Request.Host}}</a>
+		{{range $_, $root := rootDomains .Request.Host}}
+			<a href="http://proxy:9000/add?url={{$.Request.URL}}&host={{$root}}&match=true">Add *.{{$root}}</a>
+		{{end}}
 	</body>
 </html>
 {{end}}

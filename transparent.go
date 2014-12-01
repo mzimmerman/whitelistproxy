@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"crypto/tls"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"html/template"
@@ -12,12 +13,15 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strings"
+	"time"
 
+	"github.com/HouzuoGuo/tiedot/db"
 	"github.com/elazarl/goproxy"
 	"github.com/inconshreveable/go-vhost"
 )
 
-var whitelistAddChan = make(chan *url.URL)
+var whitelistAddChan = make(chan Entry)
 var whitelistCheckChan = make(chan *http.Request)
 var whitelistOkayChan = make(chan bool)
 var whitelistBlockedChan = make(chan []*url.URL)
@@ -25,22 +29,81 @@ var whitelistRequestBlockedChan = make(chan int)
 
 var tmpl *template.Template
 
+type Entry map[string]interface{}
+
+func NewEntry(host string, subdomains bool, path, creator string) Entry {
+	return map[string]interface{}{
+		"Host":            host,
+		"MatchSubdomains": subdomains,
+		"Path":            path,
+		"Creator":         creator,
+		"Created":         time.Now(),
+	}
+}
+
+func (e Entry) Host() string {
+	return e["Host"].(string)
+}
+
+func (e Entry) MatchSubdomains() bool {
+	return e["MatchSubdomains"].(bool)
+}
+
+func (e Entry) Path() string {
+	return e["Path"].(string)
+}
+
+func (e Entry) Creator() string {
+	return e["Creator"].(string)
+}
+
+func (e Entry) Created() time.Time {
+	return e["Created"].(time.Time)
+}
+
 func manageWhitelist() {
-	whitelistedHosts := make(map[string]struct{})
+	myDB, err := db.OpenDB("database")
+	if err != nil {
+		log.Fatalf("Unable to open database directory - %v", err)
+	}
+	myDB.Create("Entries")
+	entries := myDB.Use("Entries")
 	stack := &Stack{
 		Max: 50,
 	}
 	for {
 		select {
 		case add := <-whitelistAddChan:
-			whitelistedHosts[add.Host] = struct{}{}
-			log.Printf("Added %s", add.Host)
+			if _, err := entries.Insert(add); err != nil {
+				log.Printf("Error adding Entry - %v", err)
+			} else {
+				log.Printf("Added entry %#v", add)
+			}
 		case check := <-whitelistCheckChan:
-			_, ok := whitelistedHosts[check.Host]
-			if !ok {
+			found := false
+			entries.ForEachDoc(func(id int, data []byte) bool {
+				entry := make(Entry)
+				err := json.Unmarshal(data, &entry)
+				if err != nil {
+					log.Printf("Error building entry - %v", err)
+					return true
+				}
+				if entry.Path() != "" {
+					if !strings.HasPrefix(check.URL.Path, entry.Path()) {
+						return true
+					}
+				}
+				// Path either matched or is empty, check hosts
+				if entry.Host() == check.Host || (entry.MatchSubdomains() && strings.HasSuffix(check.Host, entry.Host())) {
+					found = true
+					return false
+				}
+				return true
+			})
+			if !found {
 				stack.Push(check.URL)
 			}
-			whitelistOkayChan <- ok
+			whitelistOkayChan <- found
 		case num := <-whitelistRequestBlockedChan:
 			list := make([]*url.URL, 0, stack.Len())
 			for {
@@ -82,12 +145,9 @@ var whiteListHandler goproxy.FuncReqHandler = func(req *http.Request, ctx *gopro
 var whitelistService = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case "/add":
-		URL := r.FormValue("url")
+		r.ParseForm()
+		URL := r.Form.Get("url")
 		decURL, err := url.QueryUnescape(URL)
-		var realURL *url.URL
-		if err == nil {
-			realURL, err = url.Parse(decURL)
-		}
 		if err != nil {
 			w.WriteHeader(400)
 			err = tmpl.ExecuteTemplate(w, "error", map[string]interface{}{"Error": err})
@@ -96,9 +156,10 @@ var whitelistService = http.HandlerFunc(func(w http.ResponseWriter, r *http.Requ
 			}
 			return
 		}
-		go func(r *url.URL) {
-			whitelistAddChan <- r
-		}(realURL)
+		entry := NewEntry(r.Form.Get("host"), r.Form.Get("match") == "true", r.Form.Get("path"), r.RemoteAddr)
+		go func() {
+			whitelistAddChan <- entry
+		}()
 		http.Redirect(w, r, decURL, 301)
 	case "/list":
 		whitelistRequestBlockedChan <- 20 // get up to the last 20
@@ -114,7 +175,10 @@ var whitelistService = http.HandlerFunc(func(w http.ResponseWriter, r *http.Requ
 
 func main() {
 	var err error
-	tmpl, err = template.ParseFiles("template.html")
+	tmpl, err = template.New("default").Funcs(template.FuncMap{
+		"paths":       paths,
+		"rootDomains": rootDomains,
+	}).ParseFiles("template.html")
 	if err != nil {
 		log.Fatalf("Error parsing template - %v", err)
 	}
@@ -195,6 +259,36 @@ func main() {
 			proxy.ServeHTTP(resp, connectReq)
 		}(c)
 	}
+}
+
+func paths(path string) []string {
+	data := strings.Split(path, "/")
+	response := make([]string, 0)
+	if path == "/" {
+		return response
+	}
+	if len(path) < 1 {
+		return response
+	}
+	if path[0] != '/' {
+		return response
+	}
+	for i := 1; i < len(data); i++ {
+		response = append([]string{"/" + strings.Join(data[1:i+1], "/")}, response...)
+	}
+	return response
+}
+
+func rootDomains(host string) []string {
+	data := strings.Split(host, ".")
+	response := make([]string, 0)
+	if len(data) <= 1 {
+		return response
+	}
+	for i := 0; i < len(data)-1; i++ {
+		response = append(response, strings.Join(data[i:], "."))
+	}
+	return response
 }
 
 // copied/converted from https.go
