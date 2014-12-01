@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"crypto/tls"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"html/template"
@@ -61,6 +60,47 @@ func (e Entry) Created() time.Time {
 	return e["Created"].(time.Time)
 }
 
+func queryURL(url *url.URL) []interface{} { // returns a query for tiedot
+	query := []interface{}{
+		map[string]interface{}{
+			"eq":    url.Host,
+			"in":    []interface{}{"Host"},
+			"limit": 1,
+		},
+	}
+	for _, host := range rootDomains(url.Host) {
+		query = append(query, map[string]interface{}{
+			"n": []interface{}{
+				map[string]interface{}{
+					"eq":    host,
+					"in":    []interface{}{"Host"},
+					"limit": 1,
+				}, map[string]interface{}{
+					"eq":    "true",
+					"in":    []interface{}{"MatchSubdomains"},
+					"limit": 1,
+				},
+			},
+		})
+	}
+	for _, paths := range paths(url.Path) {
+		query = append(query, map[string]interface{}{
+			"n": []interface{}{
+				map[string]interface{}{
+					"eq": url.Host,
+					"in": []interface{}{"Host"},
+				},
+				map[string]interface{}{
+					"eq":    paths,
+					"in":    []interface{}{"Path"},
+					"limit": 1,
+				},
+			},
+		})
+	}
+	return query
+}
+
 func manageWhitelist() {
 	myDB, err := db.OpenDB("database")
 	if err != nil {
@@ -68,6 +108,9 @@ func manageWhitelist() {
 	}
 	myDB.Create("Entries")
 	entries := myDB.Use("Entries")
+	entries.Index([]string{"Host"})
+	entries.Index([]string{"MatchSubdomains"})
+	entries.Index([]string{"Path"})
 	stack := &Stack{
 		Max: 50,
 	}
@@ -80,30 +123,16 @@ func manageWhitelist() {
 				log.Printf("Added entry %#v", add)
 			}
 		case check := <-whitelistCheckChan:
-			found := false
-			entries.ForEachDoc(func(id int, data []byte) bool {
-				entry := make(Entry)
-				err := json.Unmarshal(data, &entry)
-				if err != nil {
-					log.Printf("Error building entry - %v", err)
-					return true
-				}
-				if entry.Path() != "" {
-					if !strings.HasPrefix(check.URL.Path, entry.Path()) {
-						return true
-					}
-				}
-				// Path either matched or is empty, check hosts
-				if entry.Host() == check.Host || (entry.MatchSubdomains() && strings.HasSuffix(check.Host, entry.Host())) {
-					found = true
-					return false
-				}
-				return true
-			})
-			if !found {
+			query := queryURL(check.URL)
+			result := make(map[int]struct{})
+			err := db.EvalQuery(query, entries, &result)
+			if err != nil {
+				log.Printf("Error doing tiedot query - %v", err)
+			}
+			if len(result) == 0 {
 				stack.Push(check.URL)
 			}
-			whitelistOkayChan <- found
+			whitelistOkayChan <- len(result) > 0
 		case num := <-whitelistRequestBlockedChan:
 			list := make([]*url.URL, 0, stack.Len())
 			for {
