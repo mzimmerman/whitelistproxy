@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/mzimmerman/whitelistproxy.svg)](https://travis-ci.org/mzimmerman/whitelistproxy)
+
 # Whitelist Proxy
 
 This transparent proxy does a man-in-the-middle on all http and https connections It requires that it sees all the packets in the route to the destination.  Linux iptables rules deal with changing the source/destination IPs to act transparently, but you do need to setup your network configuration the proxy is a mandatory stop on the outgoing route.  Primarily you can do this by placing the proxy inline.  whitelistproxy does not have any WCCP support itself; patches welcome.
