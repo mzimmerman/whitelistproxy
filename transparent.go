@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"crypto/tls"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"html/template"
@@ -103,23 +104,33 @@ type RegexWhitelistManager struct {
 	match   []*regexp.Regexp
 }
 
-func NewRegexWhitelistManager(dbname string) *RegexWhitelistManager {
+func NewRegexWhitelistManager(dbname string) (*RegexWhitelistManager, error) {
 	rwm := &RegexWhitelistManager{}
 	var err error
 	rwm.myDB, err = db.OpenDB(dbname)
 	if err != nil {
-		log.Fatalf("Unable to open database directory - %v", err)
+		return nil, fmt.Errorf("Unable to open database directory - %v", err)
 	}
 	rwm.myDB.Create("Regex")
 	rwm.entries = rwm.myDB.Use("Regex")
 	rwm.entries.ForEachDoc(func(id int, doc []byte) bool {
-		rwm.loadRegex(string(doc))
+		entry := Entry{}
+		err = json.Unmarshal(doc, &entry)
+		if err != nil {
+			log.Printf("Unable to load data (%s) from tiedot - %v", doc, err)
+			return false
+		}
+		if !rwm.loadRegex(entry.Regex()) {
+			err = fmt.Errorf("Unable to load regex - %s", entry.Regex())
+			log.Println(err)
+			return false
+		}
 		return true
 	})
 	rwm.stack = &Stack{
 		Max: 50,
 	}
-	return rwm
+	return rwm, err
 }
 
 func (rwm *RegexWhitelistManager) loadRegex(exp string) bool {
@@ -310,8 +321,11 @@ var whitelistService = http.HandlerFunc(func(w http.ResponseWriter, r *http.Requ
 })
 
 func main() {
-	wlm = NewRegexWhitelistManager("database")
 	var err error
+	wlm, err = NewRegexWhitelistManager("database")
+	if err != nil {
+		log.Fatalf("Error loading RegexWhitelist - %v", err)
+	}
 	tmpl, err = template.New("default").Funcs(template.FuncMap{
 		"paths":       paths,
 		"rootDomains": rootDomains,

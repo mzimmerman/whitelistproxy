@@ -92,8 +92,9 @@ var testingSites = []struct {
 }
 
 func BenchmarkTiedotManagerMatching(b *testing.B) {
+	fmt.Println()
 	b.StopTimer()
-	twm := NewTiedotWhitelistManager("temp")
+	twm := NewTiedotWhitelistManager("temptie")
 	defer func() {
 		twm.myDB.Close()
 		os.RemoveAll("temp")
@@ -103,8 +104,12 @@ func BenchmarkTiedotManagerMatching(b *testing.B) {
 }
 
 func BenchmarkRegexManagerMatching(b *testing.B) {
+	fmt.Println()
 	b.StopTimer()
-	rwm := NewRegexWhitelistManager("tempreg")
+	rwm, err := NewRegexWhitelistManager("tempreg")
+	if err != nil {
+		b.Fatalf("Error starting RegexWhitelistManager - %v", err)
+	}
 	defer func() {
 		rwm.myDB.Close()
 		os.RemoveAll("temp")
@@ -114,7 +119,6 @@ func BenchmarkRegexManagerMatching(b *testing.B) {
 }
 
 func benchManager(wlm WhiteListManager, b *testing.B) {
-	fmt.Println()
 	b.StartTimer()
 	for _, p := range patterns {
 		wlm.Add(p)
