@@ -31,64 +31,54 @@ type WhiteListManager interface {
 	RecentBlocks(int) []*url.URL
 }
 
-type TiedotWhitelistManager struct {
+type MemoryWhitelistManager struct {
 	sync.RWMutex
-	myDB    *db.DB
-	entries *db.Col
+	entries []Entry
 	stack   *Stack
 }
 
-func NewTiedotWhitelistManager(dbname string) *TiedotWhitelistManager {
-	twm := &TiedotWhitelistManager{}
-	var err error
-	twm.myDB, err = db.OpenDB(dbname)
-	if err != nil {
-		log.Fatalf("Unable to open database directory - %v", err)
-	}
-	twm.myDB.Create("Entries")
-	twm.entries = twm.myDB.Use("Entries")
-	twm.entries.Index([]string{"Host"})
-	twm.entries.Index([]string{"MatchSubdomains"})
-	twm.entries.Index([]string{"Path"})
+func NewMemoryWhitelistManager() *MemoryWhitelistManager {
+	twm := &MemoryWhitelistManager{}
 	twm.stack = &Stack{
 		Max: 50,
 	}
 	return twm
 }
 
-func (twm *TiedotWhitelistManager) Add(entry Entry) {
+func (twm *MemoryWhitelistManager) Add(entry Entry) {
 	twm.Lock()
 	defer twm.Unlock()
-	m := entry.Map()
-	if _, err := twm.entries.Insert(m); err != nil {
-		log.Printf("Error adding Entry - %v", err)
-	} else {
-		log.Printf("TDW added entry %#v", m)
-	}
+	twm.entries = append(twm.entries, entry)
+	log.Printf("MWLM added entry %#v", entry)
 }
 
-func (twm *TiedotWhitelistManager) Check(u *url.URL) bool {
-	query := queryURL(u)
-	result := make(map[int]struct{})
+func (twm *MemoryWhitelistManager) Check(u *url.URL) bool {
 	twm.RLock()
-	err := db.EvalQuery(query, twm.entries, &result)
-	twm.RUnlock()
-	if err != nil {
-		log.Printf("Error doing tiedot query - %v", err)
+	defer twm.RUnlock()
+	for _, x := range twm.entries {
+		if u.Host == x.Host {
+			if x.Path == "" {
+				return true
+			}
+			if strings.HasPrefix(u.Path, x.Path) {
+				if len(u.Path) == len(x.Path) { // exact same path since prefix passes
+					return true
+				}
+				// u.Path must be at least one character longer since prefix passes and they're not equal
+				if u.Path[len(x.Path)] == '?' || u.Path[len(x.Path)] == '/' {
+					return true
+				}
+			}
+		}
+		if x.MatchSubdomains && strings.HasSuffix(u.Host, "."+x.Host) {
+			return true
+		}
 	}
-	success := len(result) > 0
-	if !success {
-		twm.stack.Push(u)
-		//log.Printf("Queries were...")
-		//for _, x := range query {
-		//	log.Println(x)
-		//}
-		//log.Println()
-	}
-	return success
+	twm.stack.Push(u)
+	return false
 }
 
-func (twm *TiedotWhitelistManager) RecentBlocks(limit int) []*url.URL {
+func (twm *MemoryWhitelistManager) RecentBlocks(limit int) []*url.URL {
 	list := make([]*url.URL, 0, twm.stack.Len())
 	for {
 		if len(list) == limit {

@@ -94,14 +94,10 @@ var testingSites = []struct {
 	{"http://www.mdlottery.com", false},
 }
 
-func BenchmarkTiedotManagerMatching(b *testing.B) {
+func BenchmarkMemoryManagerMatching(b *testing.B) {
 	fmt.Println()
 	b.StopTimer()
-	twm := NewTiedotWhitelistManager("temptie")
-	defer func() {
-		twm.myDB.Close()
-		os.RemoveAll("temptie")
-	}()
+	twm := NewMemoryWhitelistManager()
 	benchManager(twm, b)
 	b.StopTimer()
 }
