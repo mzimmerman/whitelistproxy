@@ -2,12 +2,14 @@ package main
 
 import (
 	"net/url"
+	"sync"
 )
 
 type Stack struct {
 	top  *element
 	size int
 	Max  int
+	sync.RWMutex
 }
 
 type element struct {
@@ -17,11 +19,15 @@ type element struct {
 
 // Return the stack's length
 func (s *Stack) Len() int {
+	s.RLock()
+	defer s.RUnlock()
 	return s.size
 }
 
 // Push a new element onto the stack
 func (s *Stack) Push(value *url.URL) {
+	s.Lock()
+	defer s.Unlock()
 	s.top = &element{value, s.top}
 	s.size++
 	if s.Max > 0 && s.size > s.Max {
@@ -40,6 +46,8 @@ func (s *Stack) Push(value *url.URL) {
 // Remove the top element from the stack and return it's value
 // If the stack is empty, return nil
 func (s *Stack) Pop() (value *url.URL) {
+	s.Lock()
+	defer s.Unlock()
 	if s.size > 0 {
 		value, s.top = s.top.value, s.top.next
 		s.size--

@@ -12,7 +12,9 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/HouzuoGuo/tiedot/db"
@@ -20,44 +22,201 @@ import (
 	"github.com/inconshreveable/go-vhost"
 )
 
-var whitelistAddChan = make(chan Entry)
-var whitelistCheckChan = make(chan *http.Request)
-var whitelistOkayChan = make(chan bool)
-var whitelistBlockedChan = make(chan []*url.URL)
-var whitelistRequestBlockedChan = make(chan int)
+var wlm WhiteListManager
 
-var tmpl *template.Template
+type WhiteListManager interface {
+	Add(e Entry)
+	Check(*url.URL) bool
+	RecentBlocks(int) []*url.URL
+}
 
-type Entry map[string]interface{}
+type TiedotWhitelistManager struct {
+	sync.RWMutex
+	myDB    *db.DB
+	entries *db.Col
+	stack   *Stack
+}
 
-func NewEntry(host string, subdomains bool, path, creator string) Entry {
-	return map[string]interface{}{
-		"Host":            host,
-		"MatchSubdomains": subdomains,
-		"Path":            path,
-		"Creator":         creator,
-		"Created":         time.Now(),
+func NewTiedotWhitelistManager(dbname string) *TiedotWhitelistManager {
+	twm := &TiedotWhitelistManager{}
+	var err error
+	twm.myDB, err = db.OpenDB(dbname)
+	if err != nil {
+		log.Fatalf("Unable to open database directory - %v", err)
+	}
+	twm.myDB.Create("Entries")
+	twm.entries = twm.myDB.Use("Entries")
+	twm.entries.Index([]string{"Host"})
+	twm.entries.Index([]string{"MatchSubdomains"})
+	twm.entries.Index([]string{"Path"})
+	twm.stack = &Stack{
+		Max: 50,
+	}
+	return twm
+}
+
+func (twm *TiedotWhitelistManager) Add(entry Entry) {
+	twm.Lock()
+	defer twm.Unlock()
+	if _, err := twm.entries.Insert(entry.Map()); err != nil {
+		log.Printf("Error adding Entry - %v", err)
+	} else {
+		log.Printf("TDW added entry %#v", entry)
 	}
 }
 
-func (e Entry) Host() string {
-	return e["Host"].(string)
+func (twm *TiedotWhitelistManager) Check(u *url.URL) bool {
+	query := queryURL(u)
+	result := make(map[int]struct{})
+	twm.RLock()
+	err := db.EvalQuery(query, twm.entries, &result)
+	twm.RUnlock()
+	if err != nil {
+		log.Printf("Error doing tiedot query - %v", err)
+	}
+	if len(result) == 0 {
+		twm.stack.Push(u)
+	}
+	return len(result) > 0
 }
 
-func (e Entry) MatchSubdomains() bool {
-	return e["MatchSubdomains"].(bool)
+func (twm *TiedotWhitelistManager) RecentBlocks(limit int) []*url.URL {
+	list := make([]*url.URL, 0, twm.stack.Len())
+	for {
+		if len(list) == limit {
+			break
+		}
+		elem := twm.stack.Pop()
+		if elem == nil {
+			break
+		}
+		list = append(list, elem)
+	}
+	return list
 }
 
-func (e Entry) Path() string {
-	return e["Path"].(string)
+type RegexWhitelistManager struct {
+	sync.RWMutex
+	myDB    *db.DB
+	entries *db.Col
+	stack   *Stack
+	match   []*regexp.Regexp
 }
 
-func (e Entry) Creator() string {
-	return e["Creator"].(string)
+func NewRegexWhitelistManager(dbname string) *RegexWhitelistManager {
+	rwm := &RegexWhitelistManager{}
+	var err error
+	rwm.myDB, err = db.OpenDB(dbname)
+	if err != nil {
+		log.Fatalf("Unable to open database directory - %v", err)
+	}
+	rwm.myDB.Create("Regex")
+	rwm.entries = rwm.myDB.Use("Regex")
+	rwm.entries.ForEachDoc(func(id int, doc []byte) bool {
+		rwm.loadRegex(string(doc))
+		return true
+	})
+	rwm.stack = &Stack{
+		Max: 50,
+	}
+	return rwm
 }
 
-func (e Entry) Created() time.Time {
-	return e["Created"].(time.Time)
+func (rwm *RegexWhitelistManager) loadRegex(exp string) bool {
+	rx, err := regexp.Compile(exp)
+	if err != nil {
+		log.Printf("Error parsing regexp - %v", err)
+		return false
+	}
+	rwm.match = append(rwm.match, rx)
+	return true
+}
+
+func (rwm *RegexWhitelistManager) Add(entry Entry) {
+	regex := entry.Regex()
+	rwm.Lock()
+	defer rwm.Unlock()
+	if _, err := rwm.entries.Insert(map[string]interface{}{
+		"data": regex,
+	}); err != nil {
+		log.Printf("Error adding Entry - %v", err)
+	} else {
+		if rwm.loadRegex(regex) {
+			log.Printf("RWM added entry %#v", entry)
+		}
+	}
+}
+
+func (rwm *RegexWhitelistManager) Check(u *url.URL) bool {
+	rwm.RLock()
+	defer rwm.RUnlock()
+	for _, exp := range rwm.match {
+		if exp.MatchString(u.String()) {
+			return true
+		}
+	}
+	return false
+}
+
+func (rwm *RegexWhitelistManager) RecentBlocks(limit int) []*url.URL {
+	list := make([]*url.URL, 0, rwm.stack.Len())
+	for {
+		if len(list) == limit {
+			break
+		}
+		elem := rwm.stack.Pop()
+		if elem == nil {
+			break
+		}
+		list = append(list, elem)
+	}
+	return list
+}
+
+var tmpl *template.Template
+
+type Entry struct {
+	Host            string
+	MatchSubdomains bool
+	Path            string
+	Creator         string
+	Created         time.Time
+}
+
+func (e Entry) Map() map[string]interface{} {
+	return map[string]interface{}{
+		"Host":            e.Host,
+		"MatchSubdomains": e.MatchSubdomains,
+		"Path":            e.Path,
+		"Creator":         e.Creator,
+		"Created":         e.Created,
+	}
+}
+
+func NewEntry(host string, subdomains bool, path, creator string) Entry {
+	return Entry{
+		Host:            host,
+		MatchSubdomains: subdomains,
+		Path:            path,
+		Creator:         creator,
+		Created:         time.Now(),
+	}
+}
+
+func (e Entry) Regex() string {
+	var buf bytes.Buffer
+	buf.WriteString(`https??://`)
+	if e.MatchSubdomains {
+		buf.WriteString(`.*\.??`)
+	}
+	buf.WriteString(e.Host)
+	if e.Path != "" {
+		buf.WriteString(e.Path)
+		buf.WriteString(`([/\?]|$)`)
+	} else {
+		buf.WriteString(`([/\?].*|$)`)
+	}
+	return buf.String()
 }
 
 func queryURL(url *url.URL) []interface{} { // returns a query for tiedot
@@ -101,59 +260,9 @@ func queryURL(url *url.URL) []interface{} { // returns a query for tiedot
 	return query
 }
 
-func manageWhitelist() {
-	myDB, err := db.OpenDB("database")
-	if err != nil {
-		log.Fatalf("Unable to open database directory - %v", err)
-	}
-	myDB.Create("Entries")
-	entries := myDB.Use("Entries")
-	entries.Index([]string{"Host"})
-	entries.Index([]string{"MatchSubdomains"})
-	entries.Index([]string{"Path"})
-	stack := &Stack{
-		Max: 50,
-	}
-	for {
-		select {
-		case add := <-whitelistAddChan:
-			if _, err := entries.Insert(add); err != nil {
-				log.Printf("Error adding Entry - %v", err)
-			} else {
-				log.Printf("Added entry %#v", add)
-			}
-		case check := <-whitelistCheckChan:
-			query := queryURL(check.URL)
-			result := make(map[int]struct{})
-			err := db.EvalQuery(query, entries, &result)
-			if err != nil {
-				log.Printf("Error doing tiedot query - %v", err)
-			}
-			if len(result) == 0 {
-				stack.Push(check.URL)
-			}
-			whitelistOkayChan <- len(result) > 0
-		case num := <-whitelistRequestBlockedChan:
-			list := make([]*url.URL, 0, stack.Len())
-			for {
-				if len(list) == num {
-					break
-				}
-				elem := stack.Pop()
-				if elem == nil {
-					break
-				}
-				list = append(list, elem)
-			}
-			whitelistBlockedChan <- list
-		}
-	}
-}
-
 var whiteListHandler goproxy.FuncReqHandler = func(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 	buf := bytes.Buffer{}
-	whitelistCheckChan <- req
-	if <-whitelistOkayChan {
+	if ok := wlm.Check(req.URL); ok {
 		return req, nil
 	}
 	err := tmpl.ExecuteTemplate(&buf, "deny", map[string]*http.Request{"Request": req})
@@ -186,13 +295,10 @@ var whitelistService = http.HandlerFunc(func(w http.ResponseWriter, r *http.Requ
 			return
 		}
 		entry := NewEntry(r.Form.Get("host"), r.Form.Get("match") == "true", r.Form.Get("path"), r.RemoteAddr)
-		go func() {
-			whitelistAddChan <- entry
-		}()
+		wlm.Add(entry) // wait till host is added, otherwise we might get blocked again on redirect
 		http.Redirect(w, r, decURL, 301)
 	case "/list":
-		whitelistRequestBlockedChan <- 20 // get up to the last 20
-		list := <-whitelistBlockedChan
+		list := wlm.RecentBlocks(20) // get up to the last 20
 		err := tmpl.ExecuteTemplate(w, r.URL.Path, map[string]interface{}{"List": list})
 		if err != nil {
 			w.Write([]byte(fmt.Sprintf("Error fetching recently blocked sites - %v", err)))
@@ -203,6 +309,7 @@ var whitelistService = http.HandlerFunc(func(w http.ResponseWriter, r *http.Requ
 })
 
 func main() {
+	wlm = NewTiedotWhitelistManager("database")
 	var err error
 	tmpl, err = template.New("default").Funcs(template.FuncMap{
 		"paths":       paths,
@@ -211,7 +318,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error parsing template - %v", err)
 	}
-	go manageWhitelist()
 	go func() {
 		err := http.ListenAndServe(":9000", whitelistService)
 		log.Fatalf("Error starting whitelist service - %v", err)
