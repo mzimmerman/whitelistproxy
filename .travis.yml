@@ -1,0 +1,6 @@
+language: go
+install:
+  - go get -u github.com/elazarl/goproxy
+  - go get -u github.com/inconshreveable/go-vhost
+  - go get -u github.com/HouzuoGuo/tiedot/db
+script: go test -race -bench .
