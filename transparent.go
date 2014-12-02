@@ -59,10 +59,11 @@ func NewTiedotWhitelistManager(dbname string) *TiedotWhitelistManager {
 func (twm *TiedotWhitelistManager) Add(entry Entry) {
 	twm.Lock()
 	defer twm.Unlock()
-	if _, err := twm.entries.Insert(entry.Map()); err != nil {
+	m := entry.Map()
+	if _, err := twm.entries.Insert(m); err != nil {
 		log.Printf("Error adding Entry - %v", err)
 	} else {
-		log.Printf("TDW added entry %#v", entry)
+		log.Printf("TDW added entry %#v", m)
 	}
 }
 
@@ -75,10 +76,16 @@ func (twm *TiedotWhitelistManager) Check(u *url.URL) bool {
 	if err != nil {
 		log.Printf("Error doing tiedot query - %v", err)
 	}
-	if len(result) == 0 {
+	success := len(result) > 0
+	if !success {
 		twm.stack.Push(u)
+		//log.Printf("Queries were...")
+		//for _, x := range query {
+		//	log.Println(x)
+		//}
+		//log.Println()
 	}
-	return len(result) > 0
+	return success
 }
 
 func (twm *TiedotWhitelistManager) RecentBlocks(limit int) []*url.URL {
@@ -206,6 +213,9 @@ func (e Entry) Map() map[string]interface{} {
 }
 
 func NewEntry(host string, subdomains bool, path, creator string) Entry {
+	if !strings.Contains(host, ".") { // don't root domains be wildcarded, but allow "internal" hosts
+		subdomains = false
+	}
 	return Entry{
 		Host:            host,
 		MatchSubdomains: subdomains,
@@ -234,9 +244,39 @@ func (e Entry) Regex() string {
 func queryURL(url *url.URL) []interface{} { // returns a query for tiedot
 	query := []interface{}{
 		map[string]interface{}{
-			"eq":    url.Host,
-			"in":    []interface{}{"Host"},
-			"limit": 1,
+			"n": []interface{}{
+				map[string]interface{}{
+					"c": []interface{}{
+						map[string]interface{}{
+							"eq":    url.Host,
+							"in":    []interface{}{"Host"},
+							"limit": 1,
+						},
+						map[string]interface{}{
+							"has":   []interface{}{"Path"},
+							"limit": 1,
+						},
+						map[string]interface{}{
+							"has":   []interface{}{"Path"},
+							"limit": 1,
+						},
+					},
+				},
+				//map[string]interface{}{
+				//	"n": []interface{}{
+				//		map[string]interface{}{
+				//			"eq":    url.Host,
+				//			"in":    []interface{}{"Host"},
+				//			"limit": 1,
+				//		},
+				//		map[string]interface{}{
+				//			"eq":    "",
+				//			"in":    []interface{}{"Path"},
+				//			"limit": 1,
+				//		},
+				//	},
+				//},
+			},
 		},
 	}
 	for _, host := range rootDomains(url.Host) {
@@ -258,8 +298,9 @@ func queryURL(url *url.URL) []interface{} { // returns a query for tiedot
 		query = append(query, map[string]interface{}{
 			"n": []interface{}{
 				map[string]interface{}{
-					"eq": url.Host,
-					"in": []interface{}{"Host"},
+					"eq":    url.Host,
+					"in":    []interface{}{"Host"},
+					"limit": 1,
 				},
 				map[string]interface{}{
 					"eq":    paths,

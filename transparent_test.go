@@ -50,6 +50,7 @@ var patterns = []Entry{
 	NewEntry("google.com", true, "", ""),
 	NewEntry("path.com", false, "/path", ""),
 	NewEntry("travis-ci.org", false, "", ""),
+	NewEntry("com", true, "", ""), // this in invalid input, use NewEntry to "clean" it
 }
 
 var testingSites = []struct {
@@ -89,6 +90,8 @@ var testingSites = []struct {
 	{"http://path.com", false},
 	{"http://travis-ci.org", true},
 	{"https://travis-ci.org", true},
+	{"http://www.travis-ci.org", false},
+	{"http://www.mdlottery.com", false},
 }
 
 func BenchmarkTiedotManagerMatching(b *testing.B) {
@@ -97,7 +100,7 @@ func BenchmarkTiedotManagerMatching(b *testing.B) {
 	twm := NewTiedotWhitelistManager("temptie")
 	defer func() {
 		twm.myDB.Close()
-		os.RemoveAll("temp")
+		os.RemoveAll("temptie")
 	}()
 	benchManager(twm, b)
 	b.StopTimer()
@@ -112,7 +115,7 @@ func BenchmarkRegexManagerMatching(b *testing.B) {
 	}
 	defer func() {
 		rwm.myDB.Close()
-		os.RemoveAll("temp")
+		os.RemoveAll("tempreg")
 	}()
 	benchManager(rwm, b)
 	b.StopTimer()
