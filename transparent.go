@@ -155,6 +155,7 @@ func (rwm *RegexWhitelistManager) Check(u *url.URL) bool {
 			return true
 		}
 	}
+	rwm.stack.Push(u)
 	return false
 }
 
@@ -309,7 +310,7 @@ var whitelistService = http.HandlerFunc(func(w http.ResponseWriter, r *http.Requ
 })
 
 func main() {
-	wlm = NewTiedotWhitelistManager("database")
+	wlm = NewRegexWhitelistManager("database")
 	var err error
 	tmpl, err = template.New("default").Funcs(template.FuncMap{
 		"paths":       paths,

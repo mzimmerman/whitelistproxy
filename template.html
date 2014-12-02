@@ -30,11 +30,11 @@
 		{{range .List}}
 			<p><h4>{{.}}</h4>
 				{{range $_, $path := paths .Path}}
-					<a href="http://proxy:9000/add?url={{$.}}&host={{$.Host}}&match=false&path={{$path}}">Add {{$.Host}}{{$path}}</a>
+					<a href="http://proxy:9000/add?url={{$}}&host={{$.Host}}&match=false&path={{$path}}">Add {{$.Host}}{{$path}}</a>
 				{{end}}
-				<a href="http://proxy:9000/add?url={{$.}}&host={{$.Host}}&match=false">Add {{$.Host}}</a>
+				<a href="http://proxy:9000/add?url={{$}}&host={{$.Host}}&match=false">Add {{$.Host}}</a>
 				{{range $_, $root := rootDomains .Host}}
-					<a href="http://proxy:9000/add?url={{$.}}&host={{$root}}&match=true">Add *.{{$root}}</a>
+					<a href="http://proxy:9000/add?url={{$}}&host={{$root}}&match=true">Add *.{{$root}}</a>
 				{{end}}
 			</p>
 		{{end}}
