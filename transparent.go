@@ -462,8 +462,7 @@ func main() {
 	proxy.OnRequest().HandleConnectFunc(func(host string, ctx *goproxy.ProxyCtx) (*goproxy.ConnectAction, string) {
 		return &goproxy.ConnectAction{
 			Action:    goproxy.ConnectMitm,
-			TlsConfig: &tls.Config{},
-			Ca:        &cert,
+			TLSConfig: goproxy.TLSConfigFromCA(&cert),
 		}, host
 	})
 
