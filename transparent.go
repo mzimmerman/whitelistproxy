@@ -20,8 +20,43 @@ import (
 	"time"
 
 	"github.com/elazarl/goproxy"
+	"github.com/gorilla/context"
+	"github.com/gorilla/sessions"
 	"github.com/inconshreveable/go-vhost"
+	"gopkg.in/ldap.v1"
 )
+
+var store *sessions.CookieStore
+
+var ldc LDAPConnector
+
+type LDAPConnector struct {
+	BindPrefix string
+	BindSuffix string
+	Address    string
+}
+
+func (auth LDAPConnector) Authenticate(user, pass string) error {
+	conn, err := ldap.Dial("tcp", auth.Address)
+	if err != nil {
+		return err
+	}
+	return conn.Bind(auth.BindPrefix+user+auth.BindSuffix, pass)
+}
+
+func (auth LDAPConnector) ChangePass(user, oldpass, newpass string) error {
+	conn, err := ldap.Dial("tcp", auth.Address)
+	if err != nil {
+		return err
+	}
+	err = conn.Bind(user, oldpass)
+	if err != nil {
+		return err
+	}
+	pmr := ldap.NewPasswordModifyRequest(user, oldpass, newpass)
+	_, err = conn.PasswordModify(pmr)
+	return err
+}
 
 var wlm WhiteListManager
 
@@ -231,22 +266,6 @@ func NewEntry(host string, subdomains bool, path, creator string) Entry {
 	}
 }
 
-func (e Entry) Regex() string {
-	var buf bytes.Buffer
-	buf.WriteString(`https??://`)
-	if e.MatchSubdomains {
-		buf.WriteString(`.*\.??`)
-	}
-	buf.WriteString(e.Host)
-	if e.Path != "" {
-		buf.WriteString(e.Path)
-		buf.WriteString(`([/\?]|$)`)
-	} else {
-		buf.WriteString(`([/\?].*|$)`)
-	}
-	return buf.String()
-}
-
 var whiteListHandler goproxy.FuncReqHandler = func(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 	buf := bytes.Buffer{}
 	if ok := wlm.Check(req.URL); ok {
@@ -270,10 +289,23 @@ var whiteListHandler goproxy.FuncReqHandler = func(req *http.Request, ctx *gopro
 var whitelistService = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 	w.Header().Add("Cache-Control", "no-cache")
 	switch r.URL.Path {
+	case "/auth":
+		r.ParseForm()
+		err := ldc.Authenticate(r.Form.Get("user"), r.Form.Get("pass"))
+		if err != nil {
+			w.Write([]byte(fmt.Sprintf("Error authenticating - %v", err)))
+			return
+		}
+		session, _ := store.Get(r, "session")
+		session.Values["user"] = r.Form.Get("user")
+		err = session.Save(r, w)
+		if err != nil {
+			log.Printf("Authenticated successfully but could not save the cookie - %v", err)
+		}
+		fallthrough
 	case "/add":
 		r.ParseForm()
-		URL := r.Form.Get("url")
-		decURL, err := url.QueryUnescape(URL)
+		decURL, err := url.QueryUnescape(r.Form.Get("url"))
 		if err != nil {
 			w.WriteHeader(400)
 			err = tmpl.ExecuteTemplate(w, "error", map[string]interface{}{"Error": err})
@@ -300,7 +332,26 @@ var whitelistService = http.HandlerFunc(func(w http.ResponseWriter, r *http.Requ
 			}
 			return
 		}
-		entry := NewEntry(decHost, r.Form.Get("match") == "true", decPath, r.RemoteAddr)
+		user := ""
+		if ldc.Address != "" {
+			session, err := store.Get(r, "session")
+			if err == nil {
+				user, _ = session.Values["user"].(string)
+			}
+			if user == "" {
+				err = tmpl.ExecuteTemplate(w, "/auth", map[string]interface{}{
+					"URL":            r.Form.Get("url"),
+					"Path":           r.Form.Get("path"),
+					"Host":           r.Form.Get("host"),
+					"MatchSubstring": r.Form.Get("match"),
+				})
+				// TODO: prompt the user to authenticate
+				return
+			}
+		} else {
+			user = strings.Split(r.RemoteAddr, ":")[0]
+		}
+		entry := NewEntry(decHost, r.Form.Get("match") == "true", decPath, user)
 		wlm.Add(entry) // wait till host is added, otherwise we might get blocked again on redirect
 		http.Redirect(w, r, decURL, 301)
 	case "/list":
@@ -320,6 +371,28 @@ var whitelistService = http.HandlerFunc(func(w http.ResponseWriter, r *http.Requ
 })
 
 func main() {
+	verbose := flag.Bool("v", true, "should every proxy request be logged to stdout")
+	http_addr := flag.String("httpaddr", ":3129", "proxy http listen address")
+	https_addr := flag.String("httpsaddr", ":3128", "proxy https listen address")
+	cookie_pass := flag.String("cookiepass", "defaultpassword", "the encryptionkey used to manage session cookies")
+	ldap_address := flag.String("ldapaddress", "", "the address and port (addr:port) of the LDAP server")
+	ldap_bind_prefix := flag.String("ldapprefix", "uid=", "the prefix used before the userid in an LDAP bind")
+	ldap_bind_suffix := flag.String("ldapsuffix", ",ou=People,ou=whitelistproxy,ou=com", "the suffix used after the userid in an LDAP bind")
+	flag.Parse()
+
+	// initialize the gorilla session store
+	store = sessions.NewCookieStore([]byte(*cookie_pass))
+	store.Options = &sessions.Options{
+		Path:   "/",
+		MaxAge: 86400, // one day
+	}
+
+	ldc = LDAPConnector{
+		Address:    *ldap_address,
+		BindPrefix: *ldap_bind_prefix,
+		BindSuffix: *ldap_bind_suffix,
+	}
+
 	var err error
 	wlm, err = NewMemoryWhitelistManager("whitelist.csv")
 	if err != nil {
@@ -333,14 +406,9 @@ func main() {
 		log.Fatalf("Error parsing template - %v", err)
 	}
 	go func() {
-		err := http.ListenAndServe(":9000", whitelistService)
+		err := http.ListenAndServe(":9000", context.ClearHandler(whitelistService))
 		log.Fatalf("Error starting whitelist service - %v", err)
 	}()
-	verbose := flag.Bool("v", true, "should every proxy request be logged to stdout")
-	http_addr := flag.String("httpaddr", ":3129", "proxy http listen address")
-	https_addr := flag.String("httpsaddr", ":3128", "proxy https listen address")
-	flag.Parse()
-
 	proxy := goproxy.NewProxyHttpServer()
 	proxy.Verbose = *verbose
 	if proxy.Verbose {
