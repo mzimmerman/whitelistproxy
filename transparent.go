@@ -4,15 +4,18 @@ import (
 	"bufio"
 	"bytes"
 	"crypto/tls"
+	"encoding/csv"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"html/template"
+	"io"
 	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"regexp"
 	"strings"
 	"sync"
@@ -35,21 +38,116 @@ type MemoryWhitelistManager struct {
 	sync.RWMutex
 	entries []Entry
 	stack   *Stack
+	writer  *csv.Writer
+	file    *os.File
 }
 
-func NewMemoryWhitelistManager() *MemoryWhitelistManager {
-	twm := &MemoryWhitelistManager{}
-	twm.stack = &Stack{
-		Max: 50,
+func NewMemoryWhitelistManager(filename string) (*MemoryWhitelistManager, error) {
+	tmp, err := os.Open(filename)
+	if os.IsNotExist(err) {
+		tmp, err = os.Create(filename)
 	}
-	return twm
+	if err != nil {
+		return nil, err
+	}
+	twm := &MemoryWhitelistManager{
+		stack: &Stack{Max: 50},
+	}
+	r := csv.NewReader(tmp)
+	for {
+		val, err := r.Read()
+		if err == io.EOF {
+			log.Printf("val on EOF == %s", val)
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		t, _ := time.Parse(time.ANSIC, val[4])
+		twm.add(Entry{
+			Host:            val[0],
+			MatchSubdomains: val[1] == "true",
+			Path:            val[2],
+			Creator:         val[3],
+			Created:         t,
+		}, false)
+	}
+	err = tmp.Close()
+	if err != nil {
+		return nil, err
+	}
+	twm.file, err = os.OpenFile(filename, os.O_APPEND|os.O_WRONLY, 0600)
+	twm.writer = csv.NewWriter(twm.file)
+	return twm, nil
 }
 
+func removeEntry(returnVal int) int {
+	if returnVal == 1 {
+		returnVal = -1
+	} else {
+		returnVal--
+	}
+	return returnVal
+}
+
+// returns 1 if one entry was added and 0 removed
+// returns 0 if no entries added or removed
+// returns a negative integer for all entries removed (when one is added to supersede them)
+func (twm *MemoryWhitelistManager) add(proposed Entry, writeToDisk bool) int {
+	returnVal := 1
+	// returnVal starts under the assumption that the entry should be added
+	// once it finds reasons otherwise, it negates it properly
+	// if returnVal is 0 at the end, don't add the entry
+	for i := 0; i < len(twm.entries); i++ {
+		current := twm.entries[i]
+		if current.Host == proposed.Host {
+			if current.MatchSubdomains == proposed.MatchSubdomains {
+				if proposed.MatchSubdomains == false && strings.HasPrefix(proposed.Path+"/", current.Path+"/") {
+					// superseded entry, return no changes
+					return 0
+				}
+				if current.MatchSubdomains == false && strings.HasPrefix(current.Path+"/", proposed.Path+"/") {
+					returnVal = removeEntry(returnVal)
+					twm.entries[i], twm.entries = twm.entries[len(twm.entries)-1], twm.entries[:len(twm.entries)-1]
+					i--
+					continue
+				}
+				if current.MatchSubdomains && proposed.MatchSubdomains {
+					// duplicate entry, return no changes
+					return 0
+				}
+			}
+			// current.MatchSubdomains != proposed.MatchSubdomains
+			if !current.MatchSubdomains {
+				returnVal = removeEntry(returnVal)
+				twm.entries[i], twm.entries = twm.entries[len(twm.entries)-1], twm.entries[:len(twm.entries)-1]
+				i--
+				continue
+			}
+		} else if current.MatchSubdomains && strings.HasSuffix(proposed.Host, "."+current.Host) {
+			// superseded entry, return no changes
+			return 0
+		} else if proposed.MatchSubdomains && strings.HasSuffix(current.Host, "."+proposed.Host) {
+			returnVal = removeEntry(returnVal)
+			twm.entries[i], twm.entries = twm.entries[len(twm.entries)-1], twm.entries[:len(twm.entries)-1]
+			i--
+			continue
+		}
+	}
+	if returnVal != 0 { // if entities are removed or need to be added only, lets add it
+		twm.entries = append(twm.entries, proposed)
+	}
+	if writeToDisk {
+		twm.writer.Write(proposed.CSV())
+		twm.writer.Flush()
+		log.Printf("MWLM added entry %#v", proposed)
+	}
+	return returnVal
+}
 func (twm *MemoryWhitelistManager) Add(entry Entry) {
 	twm.Lock()
 	defer twm.Unlock()
-	twm.entries = append(twm.entries, entry)
-	log.Printf("MWLM added entry %#v", entry)
+	twm.add(entry, true)
 }
 
 func (twm *MemoryWhitelistManager) Check(u *url.URL) bool {
@@ -192,6 +290,10 @@ type Entry struct {
 	Created         time.Time
 }
 
+func (e Entry) CSV() []string {
+	return []string{e.Host, fmt.Sprintf("%t", e.MatchSubdomains), e.Path, e.Creator, e.Created.Format(time.ANSIC)}
+}
+
 func (e Entry) Map() map[string]interface{} {
 	return map[string]interface{}{
 		"Host":            e.Host,
@@ -229,78 +331,6 @@ func (e Entry) Regex() string {
 		buf.WriteString(`([/\?].*|$)`)
 	}
 	return buf.String()
-}
-
-func queryURL(url *url.URL) []interface{} { // returns a query for tiedot
-	query := []interface{}{
-		map[string]interface{}{
-			"n": []interface{}{
-				map[string]interface{}{
-					"c": []interface{}{
-						map[string]interface{}{
-							"eq":    url.Host,
-							"in":    []interface{}{"Host"},
-							"limit": 1,
-						},
-						map[string]interface{}{
-							"has":   []interface{}{"Path"},
-							"limit": 1,
-						},
-						map[string]interface{}{
-							"has":   []interface{}{"Path"},
-							"limit": 1,
-						},
-					},
-				},
-				//map[string]interface{}{
-				//	"n": []interface{}{
-				//		map[string]interface{}{
-				//			"eq":    url.Host,
-				//			"in":    []interface{}{"Host"},
-				//			"limit": 1,
-				//		},
-				//		map[string]interface{}{
-				//			"eq":    "",
-				//			"in":    []interface{}{"Path"},
-				//			"limit": 1,
-				//		},
-				//	},
-				//},
-			},
-		},
-	}
-	for _, host := range rootDomains(url.Host) {
-		query = append(query, map[string]interface{}{
-			"n": []interface{}{
-				map[string]interface{}{
-					"eq":    host,
-					"in":    []interface{}{"Host"},
-					"limit": 1,
-				}, map[string]interface{}{
-					"eq":    "true",
-					"in":    []interface{}{"MatchSubdomains"},
-					"limit": 1,
-				},
-			},
-		})
-	}
-	for _, paths := range paths(url.Path) {
-		query = append(query, map[string]interface{}{
-			"n": []interface{}{
-				map[string]interface{}{
-					"eq":    url.Host,
-					"in":    []interface{}{"Host"},
-					"limit": 1,
-				},
-				map[string]interface{}{
-					"eq":    paths,
-					"in":    []interface{}{"Path"},
-					"limit": 1,
-				},
-			},
-		})
-	}
-	return query
 }
 
 var whiteListHandler goproxy.FuncReqHandler = func(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {

@@ -46,11 +46,22 @@ func TestRoots(t *testing.T) {
 	}
 }
 
-var patterns = []Entry{
-	NewEntry("google.com", true, "", ""),
-	NewEntry("path.com", false, "/path", ""),
-	NewEntry("travis-ci.org", false, "", ""),
-	NewEntry("com", true, "", ""), // this in invalid input, use NewEntry to "clean" it
+var patterns = []struct {
+	val int
+	e   Entry
+}{
+	{1, NewEntry("www.google.com", false, "", "")},
+	{-1, NewEntry("www.google.com", true, "", "")},
+	{1, NewEntry("other.google.com", true, "", "")},
+	{-2, NewEntry("google.com", true, "", "")},
+	{0, NewEntry("explicit.google.com", false, "", "")},
+	{0, NewEntry("wildcard.google.com", true, "", "")},
+	{1, NewEntry("path.com", false, "/path", "")},
+	{0, NewEntry("path.com", false, "/path/too", "")},
+	{1, NewEntry("travis-ci.org", false, "", "")},
+	{1, NewEntry("com", true, "", "")},       // this in invalid input, use NewEntry to "clean" it and make it a non-wildcard entry
+	{0, NewEntry("com", false, "", "")},      // test that is is removed as duplicate
+	{0, NewEntry("com", false, "/path", "")}, // test that is is removed as duplicate
 }
 
 var testingSites = []struct {
@@ -97,7 +108,14 @@ var testingSites = []struct {
 func BenchmarkMemoryManagerMatching(b *testing.B) {
 	fmt.Println()
 	b.StopTimer()
-	twm := NewMemoryWhitelistManager()
+	twm, err := NewMemoryWhitelistManager("tempmem.csv")
+	if err != nil {
+		b.Fatalf("Error starting memory whitelist manager - %t", err)
+	}
+	defer func() {
+		twm.file.Close()
+		os.RemoveAll("tempmem.csv")
+	}()
 	benchManager(twm, b)
 	b.StopTimer()
 }
@@ -120,7 +138,7 @@ func BenchmarkRegexManagerMatching(b *testing.B) {
 func benchManager(wlm WhiteListManager, b *testing.B) {
 	b.StartTimer()
 	for _, p := range patterns {
-		wlm.Add(p)
+		wlm.Add(p.e)
 	}
 	for i := 0; i < b.N; i++ {
 		for j, s := range testingSites {
@@ -129,6 +147,25 @@ func benchManager(wlm WhiteListManager, b *testing.B) {
 			if result != s.Check {
 				b.Errorf("[%d] For URL %s - expected %t, got %t", j, u, s.Check, result)
 			}
+		}
+	}
+}
+
+func TestMemoryWhiteListManagerAdd(t *testing.T) {
+	fmt.Println()
+	twm, err := NewMemoryWhitelistManager("tempmem.csv")
+	if err != nil {
+		t.Fatalf("Error starting memory whitelist manager - %t", err)
+	}
+	defer func() {
+		twm.file.Close()
+		os.RemoveAll("tempmem.csv")
+	}()
+	twm.entries = twm.entries[:0]
+	for i, p := range patterns {
+		got := twm.add(p.e, false)
+		if p.val != got {
+			t.Errorf("Got %d, wanted %v, for entry #%d - %v", got, p.val, i, p.e)
 		}
 	}
 }
