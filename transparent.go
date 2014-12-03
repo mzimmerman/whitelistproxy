@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"crypto/tls"
 	"encoding/csv"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"html/template"
@@ -16,12 +15,10 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/HouzuoGuo/tiedot/db"
 	"github.com/elazarl/goproxy"
 	"github.com/inconshreveable/go-vhost"
 )
@@ -195,99 +192,6 @@ func (twm *MemoryWhitelistManager) Current() []Entry {
 	twm.Lock()
 	defer twm.Unlock()
 	return twm.entries
-}
-
-type RegexWhitelistManager struct {
-	sync.RWMutex
-	myDB    *db.DB
-	entries *db.Col
-	stack   *Stack
-	match   []*regexp.Regexp
-}
-
-func NewRegexWhitelistManager(dbname string) (*RegexWhitelistManager, error) {
-	rwm := &RegexWhitelistManager{}
-	var err error
-	rwm.myDB, err = db.OpenDB(dbname)
-	if err != nil {
-		return nil, fmt.Errorf("Unable to open database directory - %v", err)
-	}
-	rwm.myDB.Create("Regex")
-	rwm.entries = rwm.myDB.Use("Regex")
-	rwm.entries.ForEachDoc(func(id int, doc []byte) bool {
-		entry := Entry{}
-		err = json.Unmarshal(doc, &entry)
-		if err != nil {
-			log.Printf("Unable to load data (%s) from tiedot - %v", doc, err)
-			return false
-		}
-		if !rwm.loadRegex(entry.Regex()) {
-			err = fmt.Errorf("Unable to load regex - %s", entry.Regex())
-			log.Println(err)
-			return false
-		}
-		return true
-	})
-	rwm.stack = &Stack{
-		Max: 50,
-	}
-	return rwm, err
-}
-
-func (rwm *RegexWhitelistManager) loadRegex(exp string) bool {
-	rx, err := regexp.Compile(exp)
-	if err != nil {
-		log.Printf("Error parsing regexp - %v", err)
-		return false
-	}
-	rwm.match = append(rwm.match, rx)
-	return true
-}
-
-func (rwm *RegexWhitelistManager) Add(entry Entry) {
-	regex := entry.Regex()
-	rwm.Lock()
-	defer rwm.Unlock()
-	if _, err := rwm.entries.Insert(map[string]interface{}{
-		"data": regex,
-	}); err != nil {
-		log.Printf("Error adding Entry - %v", err)
-	} else {
-		if rwm.loadRegex(regex) {
-			log.Printf("RWM added entry %#v", entry)
-		}
-	}
-}
-
-func (rwm *RegexWhitelistManager) Check(u *url.URL) bool {
-	rwm.RLock()
-	defer rwm.RUnlock()
-	for _, exp := range rwm.match {
-		if exp.MatchString(u.String()) {
-			return true
-		}
-	}
-	rwm.stack.Push(u)
-	return false
-}
-
-func (rwm *RegexWhitelistManager) RecentBlocks(limit int) []*url.URL {
-	list := make([]*url.URL, 0, rwm.stack.Len())
-	for {
-		if len(list) == limit {
-			break
-		}
-		elem := rwm.stack.Pop()
-		if elem == nil {
-			break
-		}
-		list = append(list, elem)
-	}
-	return list
-}
-
-func (rwm *RegexWhitelistManager) Current() []Entry {
-	return []Entry{NewEntry("regexdoesnotimplemententries", true, "", "")}
 }
 
 var tmpl *template.Template

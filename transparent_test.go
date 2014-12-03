@@ -120,21 +120,6 @@ func BenchmarkMemoryManagerMatching(b *testing.B) {
 	b.StopTimer()
 }
 
-func BenchmarkRegexManagerMatching(b *testing.B) {
-	fmt.Println()
-	b.StopTimer()
-	rwm, err := NewRegexWhitelistManager("tempreg")
-	if err != nil {
-		b.Fatalf("Error starting RegexWhitelistManager - %v", err)
-	}
-	defer func() {
-		rwm.myDB.Close()
-		os.RemoveAll("tempreg")
-	}()
-	benchManager(rwm, b)
-	b.StopTimer()
-}
-
 func benchManager(wlm WhiteListManager, b *testing.B) {
 	b.StartTimer()
 	for _, p := range patterns {
