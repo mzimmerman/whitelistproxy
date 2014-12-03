@@ -30,13 +30,26 @@
 		{{range $url := .List}}
 			<p><h4>{{$url}}</h4>
 				{{range $_, $path := paths $url.Path}}
-					<a href="http://proxy:9000/add?url={{$url}}&host={{$url.Host}}&match=false&path={{$path}}">Add {{$url.Host}}{{$path}}</a>
+					<a href="http://proxy:9000/add?url={{urlquery $url}}&host={{urlquery $url.Host}}&match=false&path={{urlquery $path}}">Add {{$url.Host}}{{$path}}</a>
 				{{end}}
-				<a href="http://proxy:9000/add?url={{$url}}&host={{$url.Host}}&match=false">Add {{$url.Host}}</a>
+				<a href="http://proxy:9000/add?url={{urlquery $url}}&host={{urlquery $url.Host}}&match=false">Add {{$url.Host}}</a>
 				{{range $_, $root := rootDomains $url.Host}}
-					<a href="http://proxy:9000/add?url={{$url}}&host={{$root}}&match=true">Add *.{{$root}}</a>
+					<a href="http://proxy:9000/add?url={{urlquery $url}}&host={{urlquery $root}}&match=true">Add *.{{$root}}</a>
 				{{end}}
 			</p>
+		{{end}}
+	</body>
+</html>
+{{end}}
+
+{{define "/current"}}
+<html>
+	<body>
+		<h1>All allowed sites</h1>
+		<table>
+		<tr><th>Host</th><th>Match Subdomains</th><th>Path</th><th>Creator</th><th>Created</th></tr>
+		{{range .List}}
+			<tr><td>{{.Host}}</td><td>{{.MatchSubdomains}}</td><td>{{.Path}}</td><td>{{.Creator}}</td><td>{{.Created}}</td></tr>
 		{{end}}
 	</body>
 </html>

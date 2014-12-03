@@ -32,6 +32,7 @@ type WhiteListManager interface {
 	Add(e Entry)
 	Check(*url.URL) bool
 	RecentBlocks(int) []*url.URL
+	Current() []Entry
 }
 
 type MemoryWhitelistManager struct {
@@ -57,7 +58,6 @@ func NewMemoryWhitelistManager(filename string) (*MemoryWhitelistManager, error)
 	for {
 		val, err := r.Read()
 		if err == io.EOF {
-			log.Printf("val on EOF == %s", val)
 			break
 		}
 		if err != nil {
@@ -191,6 +191,12 @@ func (twm *MemoryWhitelistManager) RecentBlocks(limit int) []*url.URL {
 	return list
 }
 
+func (twm *MemoryWhitelistManager) Current() []Entry {
+	twm.Lock()
+	defer twm.Unlock()
+	return twm.entries
+}
+
 type RegexWhitelistManager struct {
 	sync.RWMutex
 	myDB    *db.DB
@@ -280,6 +286,10 @@ func (rwm *RegexWhitelistManager) RecentBlocks(limit int) []*url.URL {
 	return list
 }
 
+func (rwm *RegexWhitelistManager) Current() []Entry {
+	return []Entry{NewEntry("regexdoesnotimplemententries", true, "", "")}
+}
+
 var tmpl *template.Template
 
 type Entry struct {
@@ -347,13 +357,14 @@ var whiteListHandler goproxy.FuncReqHandler = func(req *http.Request, ctx *gopro
 		ProtoMajor:    1,
 		ProtoMinor:    1,
 		Request:       ctx.Req,
-		Header:        http.Header{},
+		Header:        http.Header{"Cache-Control": []string{"no-cache"}},
 		Body:          ioutil.NopCloser(&buf),
 		ContentLength: int64(buf.Len()),
 	}
 }
 
 var whitelistService = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	w.Header().Add("Cache-Control", "no-cache")
 	switch r.URL.Path {
 	case "/add":
 		r.ParseForm()
@@ -367,7 +378,25 @@ var whitelistService = http.HandlerFunc(func(w http.ResponseWriter, r *http.Requ
 			}
 			return
 		}
-		entry := NewEntry(r.Form.Get("host"), r.Form.Get("match") == "true", r.Form.Get("path"), r.RemoteAddr)
+		decHost, err := url.QueryUnescape(r.Form.Get("host"))
+		if err != nil {
+			w.WriteHeader(400)
+			err = tmpl.ExecuteTemplate(w, "error", map[string]interface{}{"Error": err})
+			if err != nil {
+				w.Write([]byte(fmt.Sprintf("Error adding site to whitelist, error writing template - %v", err)))
+			}
+			return
+		}
+		decPath, err := url.QueryUnescape(r.Form.Get("path"))
+		if err != nil {
+			w.WriteHeader(400)
+			err = tmpl.ExecuteTemplate(w, "error", map[string]interface{}{"Error": err})
+			if err != nil {
+				w.Write([]byte(fmt.Sprintf("Error adding site to whitelist, error writing template - %v", err)))
+			}
+			return
+		}
+		entry := NewEntry(decHost, r.Form.Get("match") == "true", decPath, r.RemoteAddr)
 		wlm.Add(entry) // wait till host is added, otherwise we might get blocked again on redirect
 		http.Redirect(w, r, decURL, 301)
 	case "/list":
@@ -376,6 +405,11 @@ var whitelistService = http.HandlerFunc(func(w http.ResponseWriter, r *http.Requ
 		if err != nil {
 			w.Write([]byte(fmt.Sprintf("Error fetching recently blocked sites - %v", err)))
 		}
+	case "/current":
+		err := tmpl.ExecuteTemplate(w, r.URL.Path, map[string]interface{}{"List": wlm.Current()})
+		if err != nil {
+			w.Write([]byte(fmt.Sprintf("Error fetching current whitelist - %v", err)))
+		}
 	default:
 		w.Write([]byte(fmt.Sprintf("Unable to handle path - %s", r.URL.Path)))
 	}
@@ -383,7 +417,7 @@ var whitelistService = http.HandlerFunc(func(w http.ResponseWriter, r *http.Requ
 
 func main() {
 	var err error
-	wlm, err = NewRegexWhitelistManager("database")
+	wlm, err = NewMemoryWhitelistManager("whitelist.csv")
 	if err != nil {
 		log.Fatalf("Error loading RegexWhitelist - %v", err)
 	}

@@ -60,8 +60,8 @@ var patterns = []struct {
 	{0, NewEntry("path.com", false, "/path/too", "")},
 	{1, NewEntry("travis-ci.org", false, "", "")},
 	{1, NewEntry("com", true, "", "")},       // this in invalid input, use NewEntry to "clean" it and make it a non-wildcard entry
-	{0, NewEntry("com", false, "", "")},      // test that is is removed as duplicate
-	{0, NewEntry("com", false, "/path", "")}, // test that is is removed as duplicate
+	{0, NewEntry("com", false, "", "")},      // test that this is not added as it is a duplicate
+	{0, NewEntry("com", false, "/path", "")}, // test that this is not added as it is superceded by path
 }
 
 var testingSites = []struct {
