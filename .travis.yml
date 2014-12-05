@@ -4,7 +4,7 @@ install:
   - go get -u github.com/inconshreveable/go-vhost
   - go get -u github.com/gorilla/context
   - go get -u github.com/gorilla/sessions
-  - go get -u gopkg.in/ldap.v1
+  - go get -u github.com/mzimmerman/ldap
 script:
 - go test -bench . -race
 - go test -bench .
