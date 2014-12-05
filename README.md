@@ -4,6 +4,13 @@
 
 This transparent proxy does a man-in-the-middle on all http and https connections It requires that it sees all the packets in the route to the destination.  Linux iptables rules deal with changing the source/destination IPs to act transparently, but you do need to setup your network configuration the proxy is a mandatory stop on the outgoing route.  Primarily you can do this by placing the proxy inline.  whitelistproxy does not have any WCCP support itself; patches welcome.
 
+# Features
+- Transparent
+- HTTPS proxying through MITM (Need to provide a CA certificate)
+- Supports non-SNI enabled clients (when host running proxy also serves dns through dnsmasq)
+- LDAP authentication required to add site to the whitelist (Optional)
+- Suggestions and pull requests welcomed
+
 ## Whitelist modifications
 
 Since this proxy by definition blocks anything that is not in the whitelist, this proxy includes a method by which users on the system can add sites to the whitelist.  This is a manual step so that only those explicitly authorized sites are reachable by clients on your network.
@@ -14,9 +21,9 @@ Transparent proxies are more difficult to maintain and setup from a server and n
 
 ## Potential Issues
 
-Support for very old clients using HTTPS will fail.  Clients need to send the SNI value in the TLS ClientHello which most modern clients do these days, but old clients will break.
+- Support for very old clients using HTTPS will fail.  Clients need to send the SNI value in the TLS ClientHello which most modern clients do these days, but old clients will break.  Run dnsmasq on the proxy and this issue is mostly mitigated.
 
-If you're routing table allows for it, an explicit http request to goproxy will cause it to fail in an endless loop since it will try to request resources from itself repeatedly.  This could be solved in the goproxy code by looking up the hostnames, but it adds a delay that is much easier/faster to handle on the routing side.
+- If you're routing table allows for it, an explicit http request to goproxy will cause it to fail in an endless loop since it will try to request resources from itself repeatedly.  This could be solved in the goproxy code by looking up the hostnames, but it adds a delay that is much easier/faster to handle on the routing side.
 
 ## Routing Rules
 
