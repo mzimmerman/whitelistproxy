@@ -365,24 +365,34 @@ var whitelistService = http.HandlerFunc(func(w http.ResponseWriter, r *http.Requ
 		http.Redirect(w, r, decURL, 301)
 	case "/list":
 		list := wlm.RecentBlocks(20) // get up to the last 20
-		err := tmpl.ExecuteTemplate(w, r.URL.Path, map[string]interface{}{"List": list})
+		refererMap := make(map[string][]*url.URL)
+		for _, site := range list {
+			refererMap[site.Referer] = append(refererMap[site.Referer], site.URL)
+		}
+		var buf bytes.Buffer
+		err := tmpl.ExecuteTemplate(&buf, r.URL.Path, map[string]interface{}{"List": refererMap})
 		if err != nil {
+			w.WriteHeader(500)
 			w.Write([]byte(fmt.Sprintf("Error fetching recently blocked sites - %v", err)))
+		} else {
+			io.Copy(w, &buf)
 		}
 	case "/current":
-		err := tmpl.ExecuteTemplate(w, r.URL.Path, map[string]interface{}{"List": wlm.Current()})
+		var buf bytes.Buffer
+		err := tmpl.ExecuteTemplate(&buf, r.URL.Path, map[string]interface{}{"List": wlm.Current()})
 		if err != nil {
+			w.WriteHeader(500)
 			w.Write([]byte(fmt.Sprintf("Error fetching current whitelist - %v", err)))
+		} else {
+			io.Copy(w, &buf)
 		}
 	default:
+		w.WriteHeader(500)
 		w.Write([]byte(fmt.Sprintf("Unable to handle path - %s", r.URL.Path)))
 	}
 })
 
-func main() {
-	verbose := flag.Bool("v", true, "should every proxy request be logged to stdout")
-	http_addr := flag.String("httpaddr", ":3129", "proxy http listen address")
-	https_addr := flag.String("httpsaddr", ":3128", "proxy https listen address")
+func init() {
 	cookie_pass := flag.String("cookiepass", "defaultpassword", "the encryptionkey used to manage session cookies")
 	ldap_address := flag.String("ldapaddress", "", "the address and port (addr:port) of the LDAP server")
 	ldap_bind_prefix := flag.String("ldapprefix", "uid=", "the prefix used before the userid in an LDAP bind")
@@ -414,6 +424,12 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error parsing template - %v", err)
 	}
+}
+
+func main() {
+	verbose := flag.Bool("v", true, "should every proxy request be logged to stdout")
+	http_addr := flag.String("httpaddr", ":3129", "proxy http listen address")
+	https_addr := flag.String("httpsaddr", ":3128", "proxy https listen address")
 	go func() {
 		err := http.ListenAndServe(":9000", context.ClearHandler(whitelistService))
 		log.Fatalf("Error starting whitelist service - %v", err)

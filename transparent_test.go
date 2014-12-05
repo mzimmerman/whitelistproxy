@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"reflect"
@@ -65,44 +67,45 @@ var patterns = []struct {
 }
 
 var testingSites = []struct {
-	URL   string
-	Check bool
+	URL     string
+	Check   bool
+	Referer string
 }{
-	{"http://www.google.com", true},
-	{"https://www.google.com", true},
-	{"http://child.www.google.com", true},
-	{"https://child.www.google.com", true},
-	{"http://google.com", true},
-	{"http://google.com?query=true", true},
-	{"http://google.com/?query=true", true},
-	{"http://www.google.company", false},
-	{"https://www.google.company", false},
-	{"http://child.www.google.company", false},
-	{"https://child.www.google.company", false},
-	{"http://google.company", false},
-	{"http://google.company?query=true", false},
-	{"http://google.company/?query=true", false},
-	{"http://path.com/path?query=true", true},
-	{"http://path.com/path/?query=true", true},
-	{"http://www.path.com/path?query=true", false},
-	{"http://www.path.com/path/?query=true", false},
-	{"http://path.com/path/good?query=true", true},
-	{"https://path.com/path/good?query=true", true},
-	{"http://path.com/path/good/?query=true", true},
-	{"http://path.com/falsepath?query=true", false},
-	{"http://path.com/falsepath/?query=true", false},
-	{"http://path.com/falsepath/", false},
-	{"http://path.com/falsepath", false},
-	{"http://path.com/pathfalse?query=true", false},
-	{"http://path.com/pathfalse/?query=true", false},
-	{"http://path.com/pathfalse/", false},
-	{"http://path.com/pathfalse", false},
-	{"http://path.com/", false},
-	{"http://path.com", false},
-	{"http://travis-ci.org", true},
-	{"https://travis-ci.org", true},
-	{"http://www.travis-ci.org", false},
-	{"http://www.mdlottery.com", false},
+	{"http://www.google.com", true, "http://referer"},
+	{"https://www.google.com", true, "http://referer"},
+	{"http://child.www.google.com", true, "http://referer"},
+	{"https://child.www.google.com", true, "http://referer"},
+	{"http://google.com", true, "http://referer"},
+	{"http://google.com?query=true", true, "http://referer"},
+	{"http://google.com/?query=true", true, "http://referer"},
+	{"http://www.google.company", false, "http://referer"},
+	{"https://www.google.company", false, "http://referer"},
+	{"http://child.www.google.company", false, "http://referer"},
+	{"https://child.www.google.company", false, "http://referer"},
+	{"http://google.company", false, "http://referer"},
+	{"http://google.company?query=true", false, "http://referer"},
+	{"http://google.company/?query=true", false, "http://referer"},
+	{"http://path.com/path?query=true", true, "http://referer"},
+	{"http://path.com/path/?query=true", true, "http://referer"},
+	{"http://www.path.com/path?query=true", false, "http://referer"},
+	{"http://www.path.com/path/?query=true", false, "http://referer"},
+	{"http://path.com/path/good?query=true", true, "http://referer"},
+	{"https://path.com/path/good?query=true", true, "http://referer"},
+	{"http://path.com/path/good/?query=true", true, "http://referer"},
+	{"http://path.com/falsepath?query=true", false, "http://referer"},
+	{"http://path.com/falsepath/?query=true", false, "http://referer"},
+	{"http://path.com/falsepath/", false, "http://referer"},
+	{"http://path.com/falsepath", false, "http://referer"},
+	{"http://path.com/pathfalse?query=true", false, "http://referer"},
+	{"http://path.com/pathfalse/?query=true", false, "http://referer"},
+	{"http://path.com/pathfalse/", false, "http://referer"},
+	{"http://path.com/pathfalse", false, "http://referer"},
+	{"http://path.com/", false, "http://referer"},
+	{"http://path.com", false, "http://referer"},
+	{"http://travis-ci.org", true, "http://referer"},
+	{"https://travis-ci.org", true, "http://referer"},
+	{"http://www.travis-ci.org", false, "http://referer"},
+	{"http://www.mdlottery.com", false, "http://referer"},
 }
 
 func BenchmarkMemoryManagerMatching(b *testing.B) {
@@ -151,6 +154,41 @@ func TestMemoryWhiteListManagerAdd(t *testing.T) {
 		got := twm.add(p.e, false)
 		if p.val != got {
 			t.Errorf("Got %d, wanted %v, for entry #%d - %v", got, p.val, i, p.e)
+		}
+	}
+}
+
+func TestTemplates(t *testing.T) {
+	fmt.Println()
+	twm, err := NewMemoryWhitelistManager("tempmem.csv")
+	if err != nil {
+		t.Fatalf("Error starting memory whitelist manager - %t", err)
+	}
+	defer func() {
+		twm.file.Close()
+		os.RemoveAll("tempmem.csv")
+	}()
+	for _, p := range patterns {
+		wlm.Add(p.e)
+	}
+	for j, s := range testingSites {
+		u, _ := url.Parse(s.URL)
+		result := wlm.Check(Site{URL: u, Referer: s.Referer})
+		if result != s.Check {
+			t.Errorf("[%d] For URL %s - expected %t, got %t", j, u, s.Check, result)
+		}
+	}
+	templates := []string{
+		"/auth",
+		"/list",
+		"/current",
+	}
+	for _, n := range templates {
+		w := httptest.NewRecorder()
+		req, _ := http.NewRequest("get", n, nil)
+		whitelistService(w, req)
+		if w.Code != http.StatusOK {
+			t.Errorf("Error displaying %s - %s", n, w.Body.String())
 		}
 	}
 }
