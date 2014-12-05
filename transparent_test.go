@@ -128,7 +128,7 @@ func benchManager(wlm WhiteListManager, b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		for j, s := range testingSites {
 			u, _ := url.Parse(s.URL)
-			result := wlm.Check(u)
+			result := wlm.Check(Site{URL: u})
 			if result != s.Check {
 				b.Errorf("[%d] For URL %s - expected %t, got %t", j, u, s.Check, result)
 			}

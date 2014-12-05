@@ -1,9 +1,6 @@
 package main
 
-import (
-	"net/url"
-	"sync"
-)
+import "sync"
 
 type Stack struct {
 	top  *element
@@ -13,7 +10,7 @@ type Stack struct {
 }
 
 type element struct {
-	value *url.URL // All types satisfy the empty interface, so we can store anything here.
+	value Site
 	next  *element
 }
 
@@ -25,10 +22,10 @@ func (s *Stack) Len() int {
 }
 
 // Push a new element onto the stack
-func (s *Stack) Push(value *url.URL) {
+func (s *Stack) Push(site Site) {
 	s.Lock()
 	defer s.Unlock()
-	s.top = &element{value, s.top}
+	s.top = &element{site, s.top}
 	s.size++
 	if s.Max > 0 && s.size > s.Max {
 		walker := s.top
@@ -45,13 +42,12 @@ func (s *Stack) Push(value *url.URL) {
 
 // Remove the top element from the stack and return it's value
 // If the stack is empty, return nil
-func (s *Stack) Pop() (value *url.URL) {
+func (s *Stack) Pop() (site Site) {
 	s.Lock()
 	defer s.Unlock()
 	if s.size > 0 {
-		value, s.top = s.top.value, s.top.next
+		site, s.top = s.top.value, s.top.next
 		s.size--
-		return
 	}
-	return nil
+	return
 }

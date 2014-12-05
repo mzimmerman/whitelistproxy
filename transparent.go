@@ -63,8 +63,8 @@ var wlm WhiteListManager
 
 type WhiteListManager interface {
 	Add(e Entry)
-	Check(*url.URL) bool
-	RecentBlocks(int) []*url.URL
+	Check(Site) bool
+	RecentBlocks(int) []Site
 	Current() []Entry
 }
 
@@ -183,40 +183,45 @@ func (twm *MemoryWhitelistManager) Add(entry Entry) {
 	twm.add(entry, true)
 }
 
-func (twm *MemoryWhitelistManager) Check(u *url.URL) bool {
+func (twm *MemoryWhitelistManager) Check(site Site) bool {
 	twm.RLock()
 	defer twm.RUnlock()
 	for _, x := range twm.entries {
-		if u.Host == x.Host {
+		if site.URL.Host == x.Host {
 			if x.Path == "" {
 				return true
 			}
-			if strings.HasPrefix(u.Path, x.Path) {
-				if len(u.Path) == len(x.Path) { // exact same path since prefix passes
+			if strings.HasPrefix(site.URL.Path, x.Path) {
+				if len(site.URL.Path) == len(x.Path) { // exact same path since prefix passes
 					return true
 				}
 				// u.Path must be at least one character longer since prefix passes and they're not equal
-				if u.Path[len(x.Path)] == '?' || u.Path[len(x.Path)] == '/' {
+				if site.URL.Path[len(x.Path)] == '?' || site.URL.Path[len(x.Path)] == '/' {
 					return true
 				}
 			}
 		}
-		if x.MatchSubdomains && strings.HasSuffix(u.Host, "."+x.Host) {
+		if x.MatchSubdomains && strings.HasSuffix(site.URL.Host, "."+x.Host) {
 			return true
 		}
 	}
-	twm.stack.Push(u)
+	twm.stack.Push(site)
 	return false
 }
 
-func (twm *MemoryWhitelistManager) RecentBlocks(limit int) []*url.URL {
-	list := make([]*url.URL, 0, twm.stack.Len())
+type Site struct {
+	URL     *url.URL
+	Referer string // using the "historical" spelling :)
+}
+
+func (twm *MemoryWhitelistManager) RecentBlocks(limit int) []Site {
+	list := make([]Site, 0, twm.stack.Len())
 	for {
 		if len(list) == limit {
 			break
 		}
 		elem := twm.stack.Pop()
-		if elem == nil {
+		if elem.URL == nil {
 			break
 		}
 		list = append(list, elem)
@@ -269,7 +274,10 @@ func NewEntry(host string, subdomains bool, path, creator string) Entry {
 
 var whiteListHandler goproxy.FuncReqHandler = func(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 	buf := bytes.Buffer{}
-	if ok := wlm.Check(req.URL); ok {
+	if ok := wlm.Check(Site{
+		URL:     req.URL,
+		Referer: req.Referer(),
+	}); ok {
 		return req, nil
 	}
 	err := tmpl.ExecuteTemplate(&buf, "deny", map[string]*http.Request{"Request": req})

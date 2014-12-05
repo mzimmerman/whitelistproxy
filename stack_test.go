@@ -7,7 +7,7 @@ import (
 
 func pushAll(s *Stack, data []*url.URL) {
 	for _, x := range data {
-		s.Push(x)
+		s.Push(Site{URL: x})
 	}
 }
 
@@ -30,10 +30,10 @@ func TestStack(t *testing.T) {
 	if want, got := 2, s.Len(); got != want {
 		t.Errorf("Wanted %v, got %v", want, got)
 	}
-	if want, got := urls[4], s.Pop(); got != want {
+	if want, got := urls[4], s.Pop().URL; got != want {
 		t.Errorf("Wanted %v, got %v", want, got)
 	}
-	if want, got := urls[3], s.Pop(); got != want {
+	if want, got := urls[3], s.Pop().URL; got != want {
 		t.Errorf("Wanted %v, got %v", want, got)
 	}
 	if want, got := 0, s.Len(); got != want {
