@@ -28,3 +28,6 @@ Transparent proxies are more difficult to maintain and setup from a server and n
 ## Routing Rules
 
 Example routing rules are included in [proxy.sh](https://github.com/elazarl/goproxy/blob/master/examples/transparent/proxy.sh) but are best when setup using your distribution's configuration.
+
+## Support
+Create issues for any questions on usage.
