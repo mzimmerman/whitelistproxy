@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"strings"
 	"sync"
 	"time"
@@ -22,8 +23,8 @@ import (
 	"github.com/elazarl/goproxy"
 	"github.com/gorilla/context"
 	"github.com/gorilla/sessions"
-	"github.com/inconshreveable/go-vhost"
-	"gopkg.in/ldap.v1"
+	vhost "github.com/inconshreveable/go-vhost"
+	ldap "github.com/mzimmerman/ldap"
 )
 
 var store *sessions.CookieStore
@@ -41,7 +42,7 @@ func (auth LDAPConnector) Authenticate(user, pass string) error {
 	if err != nil {
 		return err
 	}
-	return conn.Bind(auth.BindPrefix+user+auth.BindSuffix, pass)
+	return conn.Bind(auth.BindPrefix+ldap.EscapeFilter(user)+auth.BindSuffix, pass)
 }
 
 func (auth LDAPConnector) ChangePass(user, oldpass, newpass string) error {
@@ -458,17 +459,44 @@ func main() {
 			if err != nil {
 				log.Printf("Error accepting new connection - %v", err)
 			}
-			if tlsConn.Host() == "" {
-				log.Printf("Cannot support non-SNI enabled clients")
-				return
+			host := tlsConn.Host()
+			if host == "" {
+				log.Printf("Cannot support non-SNI enabled clients, attempting to make an educated guess")
+				// TODO: add other options than dnsmasq through journald
+				cmd := exec.Command(
+					"/usr/bin/sudo",
+					"/usr/bin/journalctl",
+					"-n 20",
+				)
+				output, err := cmd.CombinedOutput()
+				if err != nil {
+					log.Printf("Could not find a recent DNS lookup in the dnsmasq logs - %v", err)
+				} else {
+					lines := bufio.NewScanner(bytes.NewReader(output))
+					requestor, _, _ := net.SplitHostPort(c.RemoteAddr().String())
+					for lines.Scan() {
+						if strings.Contains(lines.Text(), requestor) {
+							split := strings.Split(lines.Text(), " ")
+							if len(split) >= 7 {
+								host = split[6]
+								break
+							}
+						}
+					}
+				}
+				if host == "" {
+					// At this point we're going to error, give the client a hint as to why
+					host = "yourclientdoesnotsuppportsni"
+				}
+				log.Printf("Guessing with %s", host)
 			}
 			connectReq := &http.Request{
 				Method: "CONNECT",
 				URL: &url.URL{
-					Opaque: tlsConn.Host(),
-					Host:   net.JoinHostPort(tlsConn.Host(), "443"),
+					Opaque: host,
+					Host:   net.JoinHostPort(host, "443"),
 				},
-				Host:   tlsConn.Host(),
+				Host:   host,
 				Header: make(http.Header),
 			}
 			resp := dumbResponseWriter{tlsConn}
