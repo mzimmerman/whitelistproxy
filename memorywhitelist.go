@@ -112,6 +112,7 @@ func (twm *MemoryWhitelistManager) add(proposed Entry, writeToDisk bool) int {
 	}
 	if returnVal != 0 { // if entities are removed or need to be added only, lets add it
 		twm.entries = append(twm.entries, proposed)
+		twm.cleanStack(proposed)
 	}
 	if writeToDisk {
 		twm.writer.Write(proposed.CSV())
@@ -120,6 +121,7 @@ func (twm *MemoryWhitelistManager) add(proposed Entry, writeToDisk bool) int {
 	}
 	return returnVal
 }
+
 func (twm *MemoryWhitelistManager) Add(entry Entry) {
 	twm.Lock()
 	defer twm.Unlock()
@@ -129,6 +131,14 @@ func (twm *MemoryWhitelistManager) Add(entry Entry) {
 func (twm *MemoryWhitelistManager) Check(site Site) bool {
 	twm.RLock()
 	defer twm.RUnlock()
+	result := twm.internalCheck(site)
+	if !result {
+		twm.stack.Push(site)
+	}
+	return result
+}
+
+func (twm *MemoryWhitelistManager) internalCheck(site Site) bool {
 	for _, x := range twm.entries {
 		if site.URL.Host == x.Host {
 			if x.Path == "" {
@@ -148,8 +158,7 @@ func (twm *MemoryWhitelistManager) Check(site Site) bool {
 			return true
 		}
 	}
-	twm.stack.Push(site)
-	return false
+	return false // no matches found
 }
 
 type Site struct {
@@ -176,4 +185,16 @@ func (twm *MemoryWhitelistManager) Current() []Entry {
 	twm.Lock()
 	defer twm.Unlock()
 	return twm.entries
+}
+
+func (twm *MemoryWhitelistManager) cleanStack(newEntry Entry) {
+	sites := make([]Site, twm.stack.Len())
+	for i := range sites {
+		sites[i] = *twm.stack.Pop()
+	}
+	for i := len(sites) - 1; i >= 0; i-- {
+		if !twm.internalCheck(sites[i]) { // if it is still not allowed, push it back
+			twm.stack.Push(sites[i])
+		}
+	}
 }
