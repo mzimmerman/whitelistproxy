@@ -24,6 +24,9 @@ func TestStack(t *testing.T) {
 		urls[x], _ = url.Parse(testData[x])
 	}
 	s := NewStack(2)
+	if want, got := 0, s.Len(); got != want {
+		t.Errorf("Wanted %v, got %v", want, got)
+	}
 	pushAll(s, urls)
 	if want, got := 2, s.Len(); got != want {
 		t.Errorf("Wanted %v, got %v", want, got)
@@ -32,6 +35,9 @@ func TestStack(t *testing.T) {
 		t.Errorf("Wanted %v, got %v", want, got)
 	}
 	if want, got := urls[3], s.Pop().URL; got != want {
+		t.Errorf("Wanted %v, got %v", want, got)
+	}
+	if want, got := (*Site)(nil), s.Pop(); got != want {
 		t.Errorf("Wanted %v, got %v", want, got)
 	}
 	if want, got := 0, s.Len(); got != want {
