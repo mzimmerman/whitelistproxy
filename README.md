@@ -1,4 +1,4 @@
-[![Build Status](https://travis-ci.org/mzimmerman/whitelistproxy.svg)](https://travis-ci.org/mzimmerman/whitelistproxy)
+[![Build Status](https://travis-ci.org/mzimmerman/whitelistproxy.svg)](https://travis-ci.org/mzimmerman/whitelistproxy) [![Coverage](http://gocover.io/_badge/github.com/mzimmerman/whitelistproxy)](http://gocover.io/github.com/mzimmerman/whitelistproxy)
 
 # Whitelist Proxy
 
