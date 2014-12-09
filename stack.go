@@ -2,52 +2,52 @@ package main
 
 import "sync"
 
+func NewStack(max int) *Stack {
+	return &Stack{
+		elements: make([]Site, max),
+	}
+}
+
 type Stack struct {
-	top  *element
-	size int
-	Max  int
+	elements []Site
+	newest   int // inclusive
+	length   int
 	sync.RWMutex
 }
 
-type element struct {
-	value Site
-	next  *element
-}
-
-// Return the stack's length
 func (s *Stack) Len() int {
 	s.RLock()
 	defer s.RUnlock()
-	return s.size
+	return s.length
 }
 
 // Push a new element onto the stack
 func (s *Stack) Push(site Site) {
 	s.Lock()
 	defer s.Unlock()
-	s.top = &element{site, s.top}
-	s.size++
-	if s.Max > 0 && s.size > s.Max {
-		walker := s.top
-		for {
-			if walker.next.next == nil {
-				walker.next = nil
-				s.size--
-				return
-			}
-			walker = walker.next
-		}
+	s.newest++
+	if s.newest == cap(s.elements) {
+		s.newest = 0
+	}
+	s.elements[s.newest] = site
+	if s.length < cap(s.elements) {
+		s.length++
 	}
 }
 
 // Remove the top element from the stack and return it's value
 // If the stack is empty, return nil
-func (s *Stack) Pop() (site Site) {
+func (s *Stack) Pop() (site *Site) {
 	s.Lock()
 	defer s.Unlock()
-	if s.size > 0 {
-		site, s.top = s.top.value, s.top.next
-		s.size--
+	if s.length == 0 {
+		return nil
 	}
-	return
+	s.length--
+	victim := s.elements[s.newest]
+	s.newest--
+	if s.newest == -1 {
+		s.newest = cap(s.elements) - 1
+	}
+	return &victim
 }

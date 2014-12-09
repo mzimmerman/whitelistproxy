@@ -23,9 +23,7 @@ func TestStack(t *testing.T) {
 	for x := range testData {
 		urls[x], _ = url.Parse(testData[x])
 	}
-	s := &Stack{
-		Max: 2,
-	}
+	s := NewStack(2)
 	pushAll(s, urls)
 	if want, got := 2, s.Len(); got != want {
 		t.Errorf("Wanted %v, got %v", want, got)

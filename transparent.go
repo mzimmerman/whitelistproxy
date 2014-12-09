@@ -85,7 +85,7 @@ func NewMemoryWhitelistManager(filename string) (*MemoryWhitelistManager, error)
 		return nil, err
 	}
 	twm := &MemoryWhitelistManager{
-		stack: &Stack{Max: 50},
+		stack: NewStack(50),
 	}
 	r := csv.NewReader(tmp)
 	for {
@@ -221,10 +221,10 @@ func (twm *MemoryWhitelistManager) RecentBlocks(limit int) []Site {
 			break
 		}
 		elem := twm.stack.Pop()
-		if elem.URL == nil {
+		if elem == nil {
 			break
 		}
-		list = append(list, elem)
+		list = append(list, *elem)
 	}
 	return list
 }
