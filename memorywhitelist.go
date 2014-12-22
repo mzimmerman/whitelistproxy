@@ -1,21 +1,21 @@
 package main
 
 import (
-	"encoding/csv"
+	"bufio"
+	"encoding/json"
 	"io"
 	"log"
 	"net/url"
 	"os"
 	"strings"
 	"sync"
-	"time"
 )
 
 type MemoryWhitelistManager struct {
 	sync.RWMutex
 	entries []Entry
 	stack   *Stack
-	writer  *csv.Writer
+	writer  *bufio.Writer
 	file    *os.File
 }
 
@@ -27,33 +27,34 @@ func NewMemoryWhitelistManager(filename string) (*MemoryWhitelistManager, error)
 	if err != nil {
 		return nil, err
 	}
+	defer func() {
+		err := tmp.Close()
+		if err != nil {
+			log.Printf("Error closing file - %v", err)
+		}
+	}()
 	twm := &MemoryWhitelistManager{
 		stack: NewStack(50),
 	}
-	r := csv.NewReader(tmp)
+	r := bufio.NewReader(tmp)
 	for {
-		val, err := r.Read()
+		val, err := r.ReadBytes('\n')
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
 			return nil, err
 		}
-		t, _ := time.Parse(time.ANSIC, val[4])
-		twm.add(Entry{
-			Host:            val[0],
-			MatchSubdomains: val[1] == "true",
-			Path:            val[2],
-			Creator:         val[3],
-			Created:         t,
-		}, false)
-	}
-	err = tmp.Close()
-	if err != nil {
-		return nil, err
+		entry := Entry{}
+		err = json.Unmarshal(val, &entry)
+		if err != nil {
+			log.Printf("Error reading input - %s", val)
+			continue
+		}
+		twm.add(entry, false)
 	}
 	twm.file, err = os.OpenFile(filename, os.O_APPEND|os.O_WRONLY, 0600)
-	twm.writer = csv.NewWriter(twm.file)
+	twm.writer = bufio.NewWriter(twm.file)
 	return twm, nil
 }
 
@@ -115,8 +116,14 @@ func (twm *MemoryWhitelistManager) add(proposed Entry, writeToDisk bool) int {
 		twm.cleanStack(proposed)
 	}
 	if writeToDisk {
-		twm.writer.Write(proposed.CSV())
-		twm.writer.Flush()
+		serialized, err := json.Marshal(proposed)
+		if err != nil {
+			log.Printf("Unable to serialize entry %v - %v", proposed, err)
+		} else {
+			twm.writer.Write(serialized)
+			twm.writer.Write([]byte{'\n'})
+			twm.writer.Flush()
+		}
 		log.Printf("MWLM added entry %#v", proposed)
 	}
 	return returnVal

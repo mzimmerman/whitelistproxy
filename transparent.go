@@ -75,20 +75,6 @@ type Entry struct {
 	Created         time.Time
 }
 
-func (e Entry) CSV() []string {
-	return []string{e.Host, fmt.Sprintf("%t", e.MatchSubdomains), e.Path, e.Creator, e.Created.Format(time.ANSIC)}
-}
-
-func (e Entry) Map() map[string]interface{} {
-	return map[string]interface{}{
-		"Host":            e.Host,
-		"MatchSubdomains": e.MatchSubdomains,
-		"Path":            e.Path,
-		"Creator":         e.Creator,
-		"Created":         e.Created,
-	}
-}
-
 func NewEntry(host string, subdomains bool, path, creator string) Entry {
 	if !strings.Contains(host, ".") { // don't root domains be wildcarded, but allow "internal" hosts
 		subdomains = false
@@ -243,9 +229,9 @@ func init() {
 	}
 
 	var err error
-	wlm, err = NewMemoryWhitelistManager("whitelist.csv")
+	wlm, err = NewMemoryWhitelistManager("whitelist.json")
 	if err != nil {
-		log.Fatalf("Error loading RegexWhitelist - %v", err)
+		log.Fatalf("Error loading MemoryWhitelist - %v", err)
 	}
 	tmpl, err = template.New("default").Funcs(template.FuncMap{
 		"paths":       paths,
