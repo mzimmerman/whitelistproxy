@@ -48,66 +48,6 @@ func TestRoots(t *testing.T) {
 	}
 }
 
-var patterns = []struct {
-	val int
-	e   Entry
-}{
-	{1, NewEntry("www.google.com", false, "", "")},
-	{-1, NewEntry("www.google.com", true, "", "")},
-	{1, NewEntry("other.google.com", true, "", "")},
-	{-2, NewEntry("google.com", true, "", "")},
-	{0, NewEntry("explicit.google.com", false, "", "")},
-	{0, NewEntry("wildcard.google.com", true, "", "")},
-	{1, NewEntry("path.com", false, "/path", "")},
-	{0, NewEntry("path.com", false, "/path/too", "")},
-	{1, NewEntry("travis-ci.org", false, "", "")},
-	{1, NewEntry("com", true, "", "")},       // this in invalid input, use NewEntry to "clean" it and make it a non-wildcard entry
-	{0, NewEntry("com", false, "", "")},      // test that this is not added as it is a duplicate
-	{0, NewEntry("com", false, "/path", "")}, // test that this is not added as it is superceded by path
-}
-
-var testingSites = []struct {
-	URL     string
-	Check   bool
-	Referer string
-}{
-	{"http://www.google.com", true, "http://referer"},
-	{"https://www.google.com", true, "http://referer"},
-	{"http://child.www.google.com", true, "http://referer"},
-	{"https://child.www.google.com", true, "http://referer"},
-	{"http://google.com", true, "http://referer"},
-	{"http://google.com?query=true", true, "http://referer"},
-	{"http://google.com/?query=true", true, "http://referer"},
-	{"http://www.google.company", false, "http://referer"},
-	{"https://www.google.company", false, "http://referer"},
-	{"http://child.www.google.company", false, "http://referer"},
-	{"https://child.www.google.company", false, "http://referer"},
-	{"http://google.company", false, "http://referer"},
-	{"http://google.company?query=true", false, "http://referer"},
-	{"http://google.company/?query=true", false, "http://referer"},
-	{"http://path.com/path?query=true", true, "http://referer"},
-	{"http://path.com/path/?query=true", true, "http://referer"},
-	{"http://www.path.com/path?query=true", false, "http://referer"},
-	{"http://www.path.com/path/?query=true", false, "http://referer"},
-	{"http://path.com/path/good?query=true", true, "http://referer"},
-	{"https://path.com/path/good?query=true", true, "http://referer"},
-	{"http://path.com/path/good/?query=true", true, "http://referer"},
-	{"http://path.com/falsepath?query=true", false, "http://referer"},
-	{"http://path.com/falsepath/?query=true", false, "http://referer"},
-	{"http://path.com/falsepath/", false, "http://referer"},
-	{"http://path.com/falsepath", false, "http://referer"},
-	{"http://path.com/pathfalse?query=true", false, "http://referer"},
-	{"http://path.com/pathfalse/?query=true", false, "http://referer"},
-	{"http://path.com/pathfalse/", false, "http://referer"},
-	{"http://path.com/pathfalse", false, "http://referer"},
-	{"http://path.com/", false, "http://referer"},
-	{"http://path.com", false, "http://referer"},
-	{"http://travis-ci.org", true, "http://referer"},
-	{"https://travis-ci.org", true, "http://referer"},
-	{"http://www.travis-ci.org", false, "http://referer"},
-	{"http://www.mdlottery.com", false, "http://referer"},
-}
-
 func TestTemplates(t *testing.T) {
 	fmt.Println()
 	twm, err := NewMemoryWhitelistManager("tempmem.csv")
@@ -118,6 +58,65 @@ func TestTemplates(t *testing.T) {
 		twm.file.Close()
 		os.RemoveAll("tempmem.csv")
 	}()
+	patterns := []struct {
+		val int
+		e   Entry
+	}{
+		{1, NewEntry("www.google.com", false, "", "", 0)},
+		{-1, NewEntry("www.google.com", true, "", "", 0)},
+		{1, NewEntry("other.google.com", true, "", "", 0)},
+		{-2, NewEntry("google.com", true, "", "", 0)},
+		{0, NewEntry("explicit.google.com", false, "", "", 0)},
+		{0, NewEntry("wildcard.google.com", true, "", "", 0)},
+		{1, NewEntry("path.com", false, "/path", "", 0)},
+		{0, NewEntry("path.com", false, "/path/too", "", 0)},
+		{1, NewEntry("travis-ci.org", false, "", "", 0)},
+		{1, NewEntry("com", true, "", "", 0)},       // this in invalid input, use NewEntry to "clean" it and make it a non-wildcard entry
+		{0, NewEntry("com", false, "", "", 0)},      // test that this is not added as it is a duplicate
+		{0, NewEntry("com", false, "/path", "", 0)}, // test that this is not added as it is superceded by path
+	}
+
+	testingSites := []struct {
+		URL     string
+		Check   bool
+		Referer string
+	}{
+		{"http://www.google.com", true, "http://referer"},
+		{"https://www.google.com", true, "http://referer"},
+		{"http://child.www.google.com", true, "http://referer"},
+		{"https://child.www.google.com", true, "http://referer"},
+		{"http://google.com", true, "http://referer"},
+		{"http://google.com?query=true", true, "http://referer"},
+		{"http://google.com/?query=true", true, "http://referer"},
+		{"http://www.google.company", false, "http://referer"},
+		{"https://www.google.company", false, "http://referer"},
+		{"http://child.www.google.company", false, "http://referer"},
+		{"https://child.www.google.company", false, "http://referer"},
+		{"http://google.company", false, "http://referer"},
+		{"http://google.company?query=true", false, "http://referer"},
+		{"http://google.company/?query=true", false, "http://referer"},
+		{"http://path.com/path?query=true", true, "http://referer"},
+		{"http://path.com/path/?query=true", true, "http://referer"},
+		{"http://www.path.com/path?query=true", false, "http://referer"},
+		{"http://www.path.com/path/?query=true", false, "http://referer"},
+		{"http://path.com/path/good?query=true", true, "http://referer"},
+		{"https://path.com/path/good?query=true", true, "http://referer"},
+		{"http://path.com/path/good/?query=true", true, "http://referer"},
+		{"http://path.com/falsepath?query=true", false, "http://referer"},
+		{"http://path.com/falsepath/?query=true", false, "http://referer"},
+		{"http://path.com/falsepath/", false, "http://referer"},
+		{"http://path.com/falsepath", false, "http://referer"},
+		{"http://path.com/pathfalse?query=true", false, "http://referer"},
+		{"http://path.com/pathfalse/?query=true", false, "http://referer"},
+		{"http://path.com/pathfalse/", false, "http://referer"},
+		{"http://path.com/pathfalse", false, "http://referer"},
+		{"http://path.com/", false, "http://referer"},
+		{"http://path.com", false, "http://referer"},
+		{"http://travis-ci.org", true, "http://referer"},
+		{"https://travis-ci.org", true, "http://referer"},
+		{"http://www.travis-ci.org", false, "http://referer"},
+		{"http://www.mdlottery.com", false, "http://referer"},
+	}
 	for _, p := range patterns {
 		wlm.Add(p.e)
 	}

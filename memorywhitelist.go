@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 )
 
 type MemoryWhitelistManager struct {
@@ -146,7 +147,11 @@ func (twm *MemoryWhitelistManager) Check(site Site) bool {
 }
 
 func (twm *MemoryWhitelistManager) internalCheck(site Site) bool {
+	now := time.Now()
 	for _, x := range twm.entries {
+		if x.Expires.Equal(x.Created) && x.Expires.After(now) {
+			continue
+		}
 		if site.URL.Host == x.Host {
 			if x.Path == "" {
 				return true

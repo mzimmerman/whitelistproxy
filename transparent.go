@@ -73,18 +73,21 @@ type Entry struct {
 	Path            string
 	Creator         string
 	Created         time.Time
+	Expires         time.Time
 }
 
-func NewEntry(host string, subdomains bool, path, creator string) Entry {
+func NewEntry(host string, subdomains bool, path, creator string, duration time.Duration) Entry {
 	if !strings.Contains(host, ".") { // don't root domains be wildcarded, but allow "internal" hosts
 		subdomains = false
 	}
+	now := time.Now()
 	return Entry{
 		Host:            host,
 		MatchSubdomains: subdomains,
 		Path:            path,
 		Creator:         creator,
-		Created:         time.Now(),
+		Created:         now,
+		Expires:         now.Add(duration),
 	}
 }
 
@@ -157,6 +160,16 @@ var whitelistService = http.HandlerFunc(func(w http.ResponseWriter, r *http.Requ
 			}
 			return
 		}
+		decDuration, err := url.QueryUnescape(r.Form.Get("duration"))
+		if err != nil {
+			w.WriteHeader(400)
+			err = tmpl.ExecuteTemplate(w, "error", map[string]interface{}{"Error": err})
+			if err != nil {
+				w.Write([]byte(fmt.Sprintf("Error adding site to whitelist, error writing template - %v", err)))
+			}
+			return
+		}
+		duration, _ := time.ParseDuration(decDuration)
 		user := ""
 		if ldc.Address != "" {
 			session, err := store.Get(r, "session")
@@ -169,14 +182,14 @@ var whitelistService = http.HandlerFunc(func(w http.ResponseWriter, r *http.Requ
 					"Path":           r.Form.Get("path"),
 					"Host":           r.Form.Get("host"),
 					"MatchSubstring": r.Form.Get("match"),
+					"Duration":       r.Form.Get("duration"),
 				})
-				// TODO: prompt the user to authenticate
 				return
 			}
 		} else {
 			user = strings.Split(r.RemoteAddr, ":")[0]
 		}
-		entry := NewEntry(decHost, r.Form.Get("match") == "true", decPath, user)
+		entry := NewEntry(decHost, r.Form.Get("match") == "true", decPath, user, duration)
 		wlm.Add(entry) // wait till host is added, otherwise we might get blocked again on redirect
 		http.Redirect(w, r, decURL, 301)
 	case "/list":
