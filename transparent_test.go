@@ -8,6 +8,7 @@ import (
 	"os"
 	"reflect"
 	"testing"
+	"time"
 )
 
 func TestPaths(t *testing.T) {
@@ -44,6 +45,70 @@ func TestRoots(t *testing.T) {
 		result := rootDomains(tr.source)
 		if !reflect.DeepEqual(result, tr.expected) {
 			t.Errorf("on %s, got %v, expected %v", tr.source, result, tr.expected)
+		}
+	}
+}
+
+func TestSupercedes(t *testing.T) {
+	patterns := []Entry{
+		/*0*/ NewEntry("www.google.com", false, "", "", -time.Hour),
+		/*1*/ NewEntry("www.google.com", true, "", "", -time.Minute),
+		/*2*/ NewEntry("other.google.com", true, "", "", -time.Second),
+		/*3*/ NewEntry("google.com", true, "", "", -time.Millisecond),
+		/*4*/ NewEntry("explicit.google.com", false, "", "", 0),
+		/*5*/ NewEntry("wildcard.google.com", true, "", "", 0),
+		/*6*/ NewEntry("path.com", false, "/path", "", time.Millisecond),
+		/*7*/ NewEntry("path.com", false, "/path/too", "", time.Second),
+		/*8*/ NewEntry("travis-ci.org", false, "", "", time.Minute),
+		/*9*/ NewEntry("com", true, "", "", time.Hour), // this in invalid input, use NewEntry to "clean" it and make it a non-wildcard entry
+		/*10*/ NewEntry("com", false, "", "", time.Hour*24), // test that this is not added as it is a duplicate
+		/*11*/ NewEntry("com", false, "/path", "", time.Hour*50), // test that this is not added as it is superceded by path
+	}
+	pathAnswers := [][]bool{
+		// ------------0----1-------2-------3-----4-------5------6------7------8------9-----10-----11
+		/*0*/ []bool{true, false, false, false, false, false, false, false, false, false, false, false},
+		/*1*/ []bool{true, true, false, false, false, false, false, false, false, false, false, false},
+		/*2*/ []bool{false, false, true, false, false, false, false, false, false, false, false, false},
+		/*3*/ []bool{true, true, true, true, true, true, false, false, false, false, false, false},
+		/*4*/ []bool{false, false, false, false, true, false, false, false, false, false, false, false},
+		/*5*/ []bool{false, false, false, false, false, true, false, false, false, false, false, false},
+		/*6*/ []bool{false, false, false, false, false, false, true, true, false, false, false, false},
+		/*7*/ []bool{false, false, false, false, false, false, false, true, false, false, false, false},
+		/*8*/ []bool{false, false, false, false, false, false, false, false, true, false, false, false},
+		/*9*/ []bool{false, false, false, false, false, false, false, false, false, true, true, true},
+		/*10*/ []bool{false, false, false, false, false, false, false, false, false, true, true, true},
+		/*11*/ []bool{false, false, false, false, false, false, false, false, false, false, false, true}}
+	timeAnswers := [][]bool{
+		// ------------0----1-------2-------3-----4-------5------6------7------8------9-----10-----11
+		/*0*/ []bool{true, false, false, false, false, false, false, false, false, false, false, false},
+		/*1*/ []bool{true, true, false, false, false, false, false, false, false, false, false, false},
+		/*2*/ []bool{true, true, true, false, false, false, false, false, false, false, false, false},
+		/*3*/ []bool{true, true, true, true, false, false, false, false, false, false, false, false},
+		/*4*/ []bool{true, true, true, true, true, true, true, true, true, true, true, true},
+		/*5*/ []bool{true, true, true, true, true, true, true, true, true, true, true, true},
+		/*6*/ []bool{true, true, true, true, false, false, true, false, false, false, false, false},
+		/*7*/ []bool{true, true, true, true, false, false, true, true, false, false, false, false},
+		/*8*/ []bool{true, true, true, true, false, false, true, true, true, false, false, false},
+		/*9*/ []bool{true, true, true, true, false, false, true, true, true, true, false, false},
+		/*10*/ []bool{true, true, true, true, false, false, true, true, true, true, true, false},
+		/*11*/ []bool{true, true, true, true, false, false, true, true, true, true, true, true},
+	}
+	for x := range timeAnswers {
+		for y := range timeAnswers[x] {
+			if expected, got := timeAnswers[x][y], patterns[x].timeSupercedes(patterns[y]); expected != got {
+				if expected {
+					t.Errorf("TIME: Expected %d to supercede %d", x, y)
+				} else {
+					t.Errorf("TIME: Did not expect %d to supercede %d", x, y)
+				}
+			}
+			if expected, got := pathAnswers[x][y], patterns[x].pathSupercedes(patterns[y]); expected != got {
+				if expected {
+					t.Errorf("PATH: Expected %d to supercede %d", x, y)
+				} else {
+					t.Errorf("PATH: Did not expect %d to supercede %d", x, y)
+				}
+			}
 		}
 	}
 }

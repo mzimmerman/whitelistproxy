@@ -77,45 +77,17 @@ func (twm *MemoryWhitelistManager) add(proposed Entry, writeToDisk bool) int {
 	// once it finds reasons otherwise, it negates it properly
 	// if returnVal is 0 at the end, don't add the entry
 	for i := 0; i < len(twm.entries); i++ {
-		current := twm.entries[i]
-		if current.Host == proposed.Host {
-			if current.MatchSubdomains == proposed.MatchSubdomains {
-				if proposed.MatchSubdomains == false && strings.HasPrefix(proposed.Path+"/", current.Path+"/") {
-					// superseded entry, return no changes
-					return 0
-				}
-				if current.MatchSubdomains == false && strings.HasPrefix(current.Path+"/", proposed.Path+"/") {
-					returnVal = removeEntry(returnVal)
-					twm.entries[i], twm.entries = twm.entries[len(twm.entries)-1], twm.entries[:len(twm.entries)-1]
-					i--
-					continue
-				}
-				if current.MatchSubdomains && proposed.MatchSubdomains {
-					// duplicate entry, return no changes
-					return 0
-				}
-			}
-			// current.MatchSubdomains != proposed.MatchSubdomains
-			if !current.MatchSubdomains {
-				returnVal = removeEntry(returnVal)
-				twm.entries[i], twm.entries = twm.entries[len(twm.entries)-1], twm.entries[:len(twm.entries)-1]
-				i--
-				continue
-			}
-		} else if current.MatchSubdomains && strings.HasSuffix(proposed.Host, "."+current.Host) {
-			// superseded entry, return no changes
+		if twm.entries[i].Supercedes(proposed) {
 			return 0
-		} else if proposed.MatchSubdomains && strings.HasSuffix(current.Host, "."+proposed.Host) {
+		}
+		if proposed.Supercedes(twm.entries[i]) {
 			returnVal = removeEntry(returnVal)
 			twm.entries[i], twm.entries = twm.entries[len(twm.entries)-1], twm.entries[:len(twm.entries)-1]
 			i--
-			continue
 		}
 	}
-	if returnVal != 0 { // if entities are removed or need to be added only, lets add it
-		twm.entries = append(twm.entries, proposed)
-		twm.cleanStack(proposed)
-	}
+	twm.entries = append(twm.entries, proposed)
+	twm.cleanStack(proposed)
 	if writeToDisk {
 		serialized, err := json.Marshal(proposed)
 		if err != nil {
@@ -125,8 +97,8 @@ func (twm *MemoryWhitelistManager) add(proposed Entry, writeToDisk bool) int {
 			twm.writer.Write([]byte{'\n'})
 			twm.writer.Flush()
 		}
-		log.Printf("MWLM added entry %#v", proposed)
 	}
+	log.Printf("MWLM added entry %#v", proposed)
 	return returnVal
 }
 

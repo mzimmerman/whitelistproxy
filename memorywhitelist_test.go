@@ -128,7 +128,7 @@ func TestMemoryWhiteListManagerExpire(t *testing.T) {
 
 func TestMemoryWhiteListManagerAdd(t *testing.T) {
 	fmt.Println()
-	twm, err := NewMemoryWhitelistManager("tempmem.csv")
+	twm, err := NewMemoryWhitelistManager("tempmem.json")
 	if err != nil {
 		t.Fatalf("Error starting memory whitelist manager - %t", err)
 	}

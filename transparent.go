@@ -91,6 +91,45 @@ func NewEntry(host string, subdomains bool, path, creator string, duration time.
 	}
 }
 
+func (e Entry) Supercedes(f Entry) bool {
+	return e.timeSupercedes(f) && e.pathSupercedes(f)
+}
+
+func (e Entry) timeSupercedes(f Entry) bool {
+	if e.Created.Equal(e.Expires) { // e does not expire
+		return true
+	}
+	if f.Created.Equal(f.Expires) { // f does not expire
+		return false
+	}
+	if !e.Expires.Before(f.Expires) {
+		return true
+	}
+	return false
+}
+
+func (e Entry) pathSupercedes(f Entry) bool {
+	if e.Host == f.Host {
+		if e.MatchSubdomains == f.MatchSubdomains {
+			if e.MatchSubdomains {
+				return true // they're the same, paths won't exist when matching subdomains
+			}
+			// neither entry matches a path
+			if strings.HasPrefix(f.Path+"/", e.Path+"/") {
+				return true
+			}
+			return false
+		}
+		// e.MatchSubdomains != f.MatchSubdomains
+		if e.MatchSubdomains {
+			return true
+		}
+	} else if e.MatchSubdomains && strings.HasSuffix(f.Host, "."+e.Host) {
+		return true
+	}
+	return false
+}
+
 var whiteListHandler goproxy.FuncReqHandler = func(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 	buf := bytes.Buffer{}
 	if ok := wlm.Check(Site{
