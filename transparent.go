@@ -152,6 +152,16 @@ var durations = []struct {
 	{"Forever", "0s", "danger"},
 }
 
+func makeWhitelistArgs(path, host string, u *url.URL, redirect bool) map[string]interface{} {
+	return map[string]interface{}{
+		"Path":      path,
+		"Host":      host,
+		"URL":       u,
+		"Redirect":  redirect,
+		"Durations": durations,
+	}
+}
+
 var whiteListHandler goproxy.FuncReqHandler = func(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 	buf := bytes.Buffer{}
 	if ok := wlm.Check(Site{
@@ -161,8 +171,7 @@ var whiteListHandler goproxy.FuncReqHandler = func(req *http.Request, ctx *gopro
 		return req, nil
 	}
 	err := tmpl.ExecuteTemplate(&buf, "deny", map[string]interface{}{
-		"Request":   req,
-		"Durations": durations,
+		"Request": req,
 	})
 	if err != nil {
 		buf.WriteString(fmt.Sprintf("<html><body>Requested destination not in whitelist, error writing template - %v", err))
@@ -246,7 +255,6 @@ var whitelistService = http.HandlerFunc(func(w http.ResponseWriter, r *http.Requ
 					"Path":           r.Form.Get("path"),
 					"Host":           r.Form.Get("host"),
 					"MatchSubstring": r.Form.Get("match"),
-					"Duration":       r.Form.Get("duration"),
 				})
 				return
 			}
@@ -333,8 +341,9 @@ func init() {
 		log.Fatalf("Error loading MemoryWhitelist - %v", err)
 	}
 	tmpl, err = template.New("default").Funcs(template.FuncMap{
-		"paths":       paths,
-		"rootDomains": rootDomains,
+		"paths":             paths,
+		"rootDomains":       rootDomains,
+		"makeWhitelistArgs": makeWhitelistArgs,
 	}).ParseFiles("template.html")
 	if err != nil {
 		log.Fatalf("Error parsing template - %v", err)
