@@ -121,7 +121,7 @@ func (twm *MemoryWhitelistManager) Check(site Site) bool {
 func (twm *MemoryWhitelistManager) internalCheck(site Site) bool {
 	now := time.Now()
 	for _, x := range twm.entries {
-		if x.Expires.Equal(x.Created) && x.Expires.After(now) {
+		if x.Expired(now) {
 			continue
 		}
 		if site.URL.Host == x.Host {
@@ -132,7 +132,7 @@ func (twm *MemoryWhitelistManager) internalCheck(site Site) bool {
 				if len(site.URL.Path) == len(x.Path) { // exact same path since prefix passes
 					return true
 				}
-				// u.Path must be at least one character longer since prefix passes and they're not equal
+				// x.Path must be at least one character longer since prefix passes and they're not equal
 				if site.URL.Path[len(x.Path)] == '?' || site.URL.Path[len(x.Path)] == '/' {
 					return true
 				}

@@ -124,6 +124,27 @@ func TestMemoryWhiteListManagerExpire(t *testing.T) {
 			t.Errorf("Got %d, wanted %v, for entry #%d - %v", got, p.val, i, p.e)
 		}
 	}
+	if len(twm.entries) != 2 {
+		t.Fatalf("Should only be two entries but instead have:\n%v", twm.entries)
+	}
+	if twm.entries[0].Host != "google.com" {
+		t.Errorf("Expected the first entry to be google.com but got %s", twm.entries[0].Host)
+	}
+	twm.entries[0].Expires = time.Now() // make sure to expire the primary one
+	tests := map[string]bool{
+		"http://google.com":       false,
+		"http://www.google.com":   true,
+		"http://other.google.com": false,
+	}
+	for u, expected := range tests {
+		parsed, err := url.Parse(u)
+		if err != nil {
+			t.Error(err)
+		}
+		if got := twm.Check(Site{URL: parsed}); got != expected {
+			t.Errorf("got %t, expected %t, for site - %s", got, expected, u)
+		}
+	}
 }
 
 func TestMemoryWhiteListManagerAdd(t *testing.T) {

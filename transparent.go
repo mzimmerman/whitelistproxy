@@ -95,6 +95,16 @@ func (e Entry) Supercedes(f Entry) bool {
 	return e.timeSupercedes(f) && e.pathSupercedes(f)
 }
 
+func (e Entry) Expired(now time.Time) bool {
+	if e.Expires.Equal(e.Created) {
+		return false
+	}
+	if e.Expires.Before(now) {
+		return true
+	}
+	return false
+}
+
 func (e Entry) timeSupercedes(f Entry) bool {
 	if e.Created.Equal(e.Expires) { // e does not expire
 		return true
@@ -263,7 +273,7 @@ var whitelistService = http.HandlerFunc(func(w http.ResponseWriter, r *http.Requ
 		go func() {
 			now := time.Now()
 			for _, e := range wlm.Current() {
-				if !e.Expires.Equal(e.Created) && now.After(e.Expires) {
+				if e.Expired(now) {
 					continue
 				}
 				select {
