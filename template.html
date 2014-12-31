@@ -38,11 +38,23 @@
 		<h1>Access Denied</h1>
 		<h2>{{.Request.Host}} is not in the whitelist.</h2>
 		{{range $_, $path := paths .Request.URL.Path}}
-			<a href="http://proxy:9000/add?url={{$.Request.URL}}&host={{$.Request.Host}}&match=false&path={{$path}}">Add {{$.Request.Host}}{{$path}}</a>
+			{{range $durName, $dur := $.Durations}}
+				<span>Add {{$.Request.Host}}{{$path}}
+					<a href="http://proxy:9000/add?url={{$.Request.URL}}&host={{$.Request.Host}}&match=false&path={{$path}}&duration={{$dur}}">{{$durName}}</a>
+				</span>
+			{{end}}
 		{{end}}
-		<a href="http://proxy:9000/add?url={{$.Request.URL}}&host={{$.Request.Host}}&match=false">Add {{$.Request.Host}}</a>
+		<span>Add {{$.Request.Host}}
+			{{range $durName, $dur := $.Durations}}
+				<a href="http://proxy:9000/add?url={{$.Request.URL}}&host={{$.Request.Host}}&match=false&duration={{$dur}}">{{$durName}}</a>
+			{{end}}
+		</span>
 		{{range $_, $root := rootDomains .Request.Host}}
-			<a href="http://proxy:9000/add?url={{$.Request.URL}}&host={{$root}}&match=true">Add *.{{$root}}</a>
+		<span>Add *.{{$root}}
+			{{range $durName, $dur := $.Durations}}
+				<a href="http://proxy:9000/add?url={{$.Request.URL}}&host={{$root}}&match=true&duration={{$dur}}">{{$durName}}</a>
+			{{end}}
+		</span>
 		{{end}}
 	</body>
 </html>
@@ -93,9 +105,16 @@
 	<body>
 		<h1>All allowed sites</h1>
 		<table>
-			<tr><th>Host</th><th>Match Subdomains</th><th>Path</th><th>Creator</th><th>Created</th></tr>
+			<tr><th>Host</th><th>Match Subdomains</th><th>Path</th><th>Creator</th><th>Created</th><th>Expires</th></tr>
 			{{range .List}}
-				<tr><td>{{.Host}}</td><td>{{.MatchSubdomains}}</td><td>{{.Path}}</td><td>{{.Creator}}</td><td>{{.Created}}</td></tr>
+				<tr>
+					<td>{{.Host}}</td>
+					<td>{{.MatchSubdomains}}</td>
+					<td>{{.Path}}</td>
+					<td>{{.Creator}}</td>
+					<td>{{.Created}}</td>
+					<td>{{if .Created.Equal .Expires}}Never{{else}}{{.Expires}}{{end}}</td>
+				</tr>
 			{{end}}
 		</table>
 	</body>
@@ -107,14 +126,15 @@
 	<body>
 		<h1>Please authenticate to add to the whitelist</h1>
 		<table>
-			<tr><th>Host</th><th>Match Subdomains</th><th>Path</th></tr>
-			<tr><td>{{.Host}}</td><td>{{.MatchSubdomains}}</td><td>{{.Path}}</td></tr>
+			<tr><th>Host</th><th>Match Subdomains</th><th>Path</th><th>Duration</th></tr>
+			<tr><td>{{.Host}}</td><td>{{.MatchSubdomains}}</td><td>{{.Path}}</td><td>{{.Duration}}</td></tr>
 		</table>
 		<form action="/auth" method="post">
 			<input type="hidden" name="host" value="{{.Host}}"/>
 			<input type="hidden" name="match" value="{{.MatchSubstring}}"/>
 			<input type="hidden" name="path" value="{{.Path}}"/>
 			<input type="hidden" name="url" value="{{.URL}}"/>
+			<input type="hidden" name="url" value="{{.Duration}}"/>
 			<p>User: <input type="text" name="user" value=""/></p>
 			<p>Pass: <input type="password" name="pass" value=""/></p>
 			<input type="submit">Login</input>

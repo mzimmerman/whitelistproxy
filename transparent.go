@@ -138,7 +138,16 @@ var whiteListHandler goproxy.FuncReqHandler = func(req *http.Request, ctx *gopro
 	}); ok {
 		return req, nil
 	}
-	err := tmpl.ExecuteTemplate(&buf, "deny", map[string]*http.Request{"Request": req})
+	err := tmpl.ExecuteTemplate(&buf, "deny", map[string]interface{}{
+		"Request": req,
+		"Durations": map[string]string{
+			"5Min":    "5m",
+			"Hour":    "1h",
+			"Day":     "24h",
+			"Week":    "168h",
+			"Forever": "0s",
+		},
+	})
 	if err != nil {
 		buf.WriteString(fmt.Sprintf("<html><body>Requested destination not in whitelist, error writing template - %v", err))
 	}
@@ -246,8 +255,28 @@ var whitelistService = http.HandlerFunc(func(w http.ResponseWriter, r *http.Requ
 			io.Copy(w, &buf)
 		}
 	case "/current":
+		currentList := make(chan Entry)
+		done := make(chan struct{})
+		defer func() {
+			done <- struct{}{}
+		}()
+		go func() {
+			now := time.Now()
+			for _, e := range wlm.Current() {
+				if !e.Expires.Equal(e.Created) && now.After(e.Expires) {
+					continue
+				}
+				select {
+				case currentList <- e:
+				case <-done:
+					return
+				}
+			}
+			close(currentList)
+			<-done
+		}()
 		var buf bytes.Buffer
-		err := tmpl.ExecuteTemplate(&buf, r.URL.Path, map[string]interface{}{"List": wlm.Current()})
+		err := tmpl.ExecuteTemplate(&buf, r.URL.Path, map[string]interface{}{"List": currentList})
 		if err != nil {
 			w.WriteHeader(500)
 			w.Write([]byte(fmt.Sprintf("Error fetching current whitelist - %v", err)))
