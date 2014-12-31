@@ -140,6 +140,18 @@ func (e Entry) pathSupercedes(f Entry) bool {
 	return false
 }
 
+var durations = []struct {
+	N string
+	D string
+	S string
+}{
+	{"5Min", "5m", "primary"},
+	{"Hour", "1h", "success"},
+	{"Day", "24h", "info"},
+	{"Week", "168h", "warning"},
+	{"Forever", "0s", "danger"},
+}
+
 var whiteListHandler goproxy.FuncReqHandler = func(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 	buf := bytes.Buffer{}
 	if ok := wlm.Check(Site{
@@ -149,14 +161,8 @@ var whiteListHandler goproxy.FuncReqHandler = func(req *http.Request, ctx *gopro
 		return req, nil
 	}
 	err := tmpl.ExecuteTemplate(&buf, "deny", map[string]interface{}{
-		"Request": req,
-		"Durations": map[string]string{
-			"5Min":    "5m",
-			"Hour":    "1h",
-			"Day":     "24h",
-			"Week":    "168h",
-			"Forever": "0s",
-		},
+		"Request":   req,
+		"Durations": durations,
 	})
 	if err != nil {
 		buf.WriteString(fmt.Sprintf("<html><body>Requested destination not in whitelist, error writing template - %v", err))
@@ -257,7 +263,9 @@ var whitelistService = http.HandlerFunc(func(w http.ResponseWriter, r *http.Requ
 			refererMap[site.Referer] = append(refererMap[site.Referer], site.URL)
 		}
 		var buf bytes.Buffer
-		err := tmpl.ExecuteTemplate(&buf, r.URL.Path, map[string]interface{}{"List": refererMap})
+		err := tmpl.ExecuteTemplate(&buf, r.URL.Path, map[string]interface{}{"List": refererMap,
+			"Durations": durations,
+		})
 		if err != nil {
 			w.WriteHeader(500)
 			w.Write([]byte(fmt.Sprintf("Error fetching recently blocked sites - %v", err)))

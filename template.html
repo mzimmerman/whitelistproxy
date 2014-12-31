@@ -33,31 +33,53 @@
 {{end}}
 
 {{define "deny"}}
-<html>
-	<body>
+	{{template "header" .}}
 		<h1>Access Denied</h1>
 		<h2>{{.Request.Host}} is not in the whitelist.</h2>
-		{{range $_, $path := paths .Request.URL.Path}}
-			{{range $durName, $dur := $.Durations}}
-				<span>Add {{$.Request.Host}}{{$path}}
-					<a href="http://proxy:9000/add?url={{$.Request.URL}}&host={{$.Request.Host}}&match=false&path={{$path}}&duration={{$dur}}">{{$durName}}</a>
-				</span>
-			{{end}}
+		{{$paths := paths .Request.URL.Path}}
+		{{if $paths}}
+			<div class="panel panel-primary">
+				<div class="panel-heading">Whitelist by path</div>
+				<div class="panel-body">
+					<ul class="list-group">
+					{{range $_, $path := $paths}}
+						<li class="list-group-item">{{$.Request.Host}}{{$path}}
+							{{range $dur := $.Durations}}
+								<a class="btn btn-{{$dur.S}} btn-xs" href="http://proxy:9000/add?url={{$.Request.URL}}&host={{$.Request.Host}}&match=false&path={{$path}}&duration={{$dur.D}}">{{$dur.N}}</a>
+							{{end}}
+						</li>
+					{{end}}
+					</ul>
+				</div>
+			</div>
 		{{end}}
-		<span>Add {{$.Request.Host}}
-			{{range $durName, $dur := $.Durations}}
-				<a href="http://proxy:9000/add?url={{$.Request.URL}}&host={{$.Request.Host}}&match=false&duration={{$dur}}">{{$durName}}</a>
-			{{end}}
-		</span>
-		{{range $_, $root := rootDomains .Request.Host}}
-		<span>Add *.{{$root}}
-			{{range $durName, $dur := $.Durations}}
-				<a href="http://proxy:9000/add?url={{$.Request.URL}}&host={{$root}}&match=true&duration={{$dur}}">{{$durName}}</a>
-			{{end}}
-		</span>
-		{{end}}
-	</body>
-</html>
+		<div class="panel panel-info">
+			<div class="panel-heading">Whitelist by host</div>
+			<div class="panel-body">
+				<ul class="list-group">
+					<li class="list-group-item">{{$.Request.Host}}
+						{{range $dur := $.Durations}}
+							<a class="btn btn-{{$dur.S}} btn-xs" href="http://proxy:9000/add?url={{$.Request.URL}}&host={{$.Request.Host}}&match=false&duration={{$dur.D}}">{{$dur.N}}</a>
+						{{end}}
+					</li>
+				</ul>
+			</div>
+		</div>
+		<div class="panel panel-danger">
+			<div class="panel-heading">Whitelist by wildcard</div>
+			<div class="panel-body">
+				<ul class="list-group">
+					{{range $_, $root := rootDomains .Request.Host}}
+						<li class="list-group-item">*.{{$root}}
+							{{range $dur := $.Durations}}
+								<a class="btn btn-{{$dur.S}} btn-xs" href="http://proxy:9000/add?url={{$.Request.URL}}&host={{$root}}&match=true&duration={{$dur.D}}">{{$dur.N}}</a>
+							{{end}}
+						</li>
+					{{end}}
+				</ul>
+			</div>
+		</div>
+	{{template "footer" .}}
 {{end}}
 
 {{define "error"}}
