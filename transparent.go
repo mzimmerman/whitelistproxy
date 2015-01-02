@@ -189,6 +189,10 @@ var whiteListHandler goproxy.FuncReqHandler = func(req *http.Request, ctx *gopro
 
 var whitelistService = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 	w.Header().Add("Cache-Control", "no-cache")
+	if strings.HasPrefix(r.URL.Path, "/js") {
+		http.StripPrefix("/js", http.FileServer(http.Dir("js"))).ServeHTTP(w, r)
+		return
+	}
 	switch r.URL.Path {
 	case "/auth":
 		r.ParseForm()
