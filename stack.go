@@ -37,6 +37,29 @@ func (s *Stack) Push(site Site) {
 
 // Remove the top element from the stack and return it's value
 // If the stack is empty, return nil
+func (s *Stack) View(num int) (sites []Site) {
+	s.Lock()
+	defer s.Unlock()
+	if s.length == 0 {
+		return sites
+	}
+	if s.length < num {
+		num = s.length
+	}
+	sites = make([]Site, num)
+	walker := s.newest
+	for x := range sites {
+		sites[x] = s.elements[walker]
+		walker--
+		if walker == -1 {
+			walker = cap(s.elements) - 1
+		}
+	}
+	return sites
+}
+
+// Remove the top element from the stack and return it's value
+// If the stack is empty, return nil
 func (s *Stack) Pop() (site *Site) {
 	s.Lock()
 	defer s.Unlock()

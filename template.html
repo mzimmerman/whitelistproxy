@@ -7,15 +7,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{.}}</title>
 	<!-- Latest compiled and minified CSS -->
-	<link rel="stylesheet" href="//proxy:9000/js/bootstrap.min.css">
+	<link rel="stylesheet" href="https://proxy:9000/js/bootstrap.min.css">
 	<!-- Optional theme -->
-	<link rel="stylesheet" href="//proxy:9000/js/bootstrap-theme.min.css">
+	<link rel="stylesheet" href="https://proxy:9000/js/bootstrap-theme.min.css">
 
     <!-- HTML5 shim and Respond.js for IE8 support of HTML5 elements and media queries -->
     <!-- WARNING: Respond.js doesn't work if you view the page via file:// -->
     <!--[if lt IE 9]>
-      <script src="//proxy:9000/js/html5shiv.min.js"></script>
-      <script src="//proxy:9000/js/respond.min.js"></script>
+      <script src="https://proxy:9000/js/html5shiv.min.js"></script>
+      <script src="https://proxy:9000/js/respond.min.js"></script>
     <![endif]-->
   </head>
   <body>
@@ -25,9 +25,9 @@
 {{define "footer"}}
 	</div>
     <!-- jQuery (necessary for Bootstrap's JavaScript plugins) -->
-    <script src="//proxy:9000/js/jquery.min.js"></script>
+    <script src="https://proxy:9000/js/jquery.min.js"></script>
 	<!-- Latest compiled and minified JavaScript -->
-	<script src="//proxy:9000/js/bootstrap.min.js"></script>
+	<script src="https://proxy:9000/js/bootstrap.min.js"></script>
   </body>
 </html>
 {{end}}
@@ -40,47 +40,35 @@
 {{define "whitelist"}}
 	{{$paths := paths .Path}}
 	{{if $paths}}
-		<div class="panel panel-primary">
-			<div class="panel-heading">Whitelist by path</div>
-			<div class="panel-body">
-				<ul class="list-group">
-				{{range $_, $path := $paths}}
-					<li class="list-group-item">
-						{{range $dur := $.Durations}}
-							<a class="btn btn-{{$dur.S}} btn-xs" href="//proxy:9000/add?url={{$.URL}}&host={{$.Host}}&match=false&path={{$path}}&duration={{$dur.D}}">{{$dur.N}}</a>
-						{{end}}
-					{{$.Host}}{{$path}}</li>
+		<div class="alert alert-success">Whitelist by path</div>
+		<ul class="list-group">
+		{{range $_, $path := $paths}}
+			<li class="list-group-item">
+				{{range $dur := $.Durations}}
+					<a class="btn btn-{{$dur.S}} btn-xs" href="https://proxy:9000/add?url={{$.URL}}&host={{$.Host}}&match=false&path={{$path}}&duration={{$dur.D}}">{{$dur.N}}</a>
 				{{end}}
-				</ul>
-			</div>
-		</div>
+			{{$.Host}}{{$path}}</li>
+		{{end}}
+		</ul>
 	{{end}}
-	<div class="panel panel-info">
-		<div class="panel-heading">Whitelist by host</div>
-		<div class="panel-body">
-			<ul class="list-group">
-				<li class="list-group-item">
-					{{range $dur := $.Durations}}
-						<a class="btn btn-{{$dur.S}} btn-xs" href="//proxy:9000/add?url={{$.URL}}&host={{$.Host}}&match=false&duration={{$dur.D}}">{{$dur.N}}</a>
-					{{end}}
-				{{.Host}}</li>
-			</ul>
-		</div>
-	</div>
-	<div class="panel panel-danger">
-		<div class="panel-heading">Whitelist by wildcard</div>
-		<div class="panel-body">
-			<ul class="list-group">
-				{{range $_, $root := rootDomains .Host}}
-					<li class="list-group-item">
-						{{range $dur := $.Durations}}
-							<a class="btn btn-{{$dur.S}} btn-xs" href="//proxy:9000/add?url={{$.URL}}&host={{$root}}&match=true&duration={{$dur.D}}">{{$dur.N}}</a>
-						{{end}}
-					*.{{$root}}</li>
+	<div class="alert alert-info">Whitelist by host</div>
+	<ul class="list-group">
+		<li class="list-group-item">
+			{{range $dur := $.Durations}}
+				<a class="btn btn-{{$dur.S}} btn-xs" href="https://proxy:9000/add?url={{$.URL}}&host={{$.Host}}&match=false&duration={{$dur.D}}">{{$dur.N}}</a>
+			{{end}}
+		{{.Host}}</li>
+	</ul>
+	<div class="alert alert-danger">Whitelist by wildcard</div>
+	<ul class="list-group">
+		{{range $_, $root := rootDomains .Host}}
+			<li class="list-group-item">
+				{{range $dur := $.Durations}}
+					<a class="btn btn-{{$dur.S}} btn-xs" href="https://proxy:9000/add?url={{$.URL}}&host={{$root}}&match=true&duration={{$dur.D}}">{{$dur.N}}</a>
 				{{end}}
-			</ul>
-		</div>
-	</div>
+			*.{{$root}}</li>
+		{{end}}
+	</ul>
 {{end}}
 
 {{define "deny"}}
@@ -103,19 +91,31 @@
 {{define "/list"}}
 	{{template "header" "Recent blocked sites"}}
 	<h1>Recent blocked sites</h1>
-	{{range $referer, $urls := .List}}
+	{{range $outindex, $item := .List}}
 		<div class="well">
-			{{if $referer}}
-				<div class="row">
-					<span class="label label-primary">Referer</span> {{$referer}}
-				</div>
+			{{if $item.Referer}}
+				<span class="label label-primary">Referer</span> {{$item.Referer}}
+			{{else}}
+				<span class="label label-success">No Referer</span>
 			{{end}}
-			{{range $_, $url := $urls}}
-				<div class="row">
-					<span class="label label-{{if $referer}}info{{else}}success{{end}}">Requested</span>  {{$url}}
-				</div>
-				{{template "whitelist" makeWhitelistArgs $url.Path $url.Host $url false}}
-			{{end}}
+			<div class="panel-group" id="accordion{{$outindex}}" role="tablist" aria-multiselectable="true">
+				{{range $inindex, $url := $item.Sites}}
+					<div class="panel panel-default">
+						<div class="panel-heading" role="tab" id="heading{{$outindex}}in{{$inindex}}">
+							<h4 class="panel-title">
+								<a data-toggle="collapse" data-parent="#accordion{{$outindex}}" href="#collapse{{$outindex}}in{{$inindex}}" aria-expanded="true" aria-controls="collapse{{$outindex}}in{{$inindex}}">
+									<span class="label label-{{if $item.Referer}}info{{else}}success{{end}}">Requested</span>{{$url}}
+								</a>
+							</h4>
+						</div>
+						<div id="collapse{{$outindex}}in{{$inindex}}" class="panel-collapse collapse" role="tabpanel" aria-labelledby="heading{{$outindex}}in{{$inindex}}">
+							<div class="panel-body">
+								{{template "whitelist" makeWhitelistArgs $url.Path $url.Host $url false}}
+							</div>
+						</div>
+					</div>
+				{{end}}
+			</div>
 		</div>
 	{{end}}
 	{{template "footer"}}

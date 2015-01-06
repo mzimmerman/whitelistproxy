@@ -269,13 +269,27 @@ var whitelistService = http.HandlerFunc(func(w http.ResponseWriter, r *http.Requ
 		wlm.Add(entry) // wait till host is added, otherwise we might get blocked again on redirect
 		http.Redirect(w, r, decURL, 301)
 	case "/list":
-		list := wlm.RecentBlocks(20) // get up to the last 20
-		refererMap := make(map[string][]*url.URL)
+		list := wlm.RecentBlocks(50) // get up to the last 50
+		type rg struct {
+			Referer string
+			Sites   []*url.URL
+		}
+		referers := make([]*rg, 0, len(list))
+	outer:
 		for _, site := range list {
-			refererMap[site.Referer] = append(refererMap[site.Referer], site.URL)
+			for _, x := range referers {
+				if x.Referer == site.Referer {
+					x.Sites = append(x.Sites, site.URL)
+					continue outer
+				}
+			}
+			referers = append(referers, &rg{
+				Referer: site.Referer,
+				Sites:   []*url.URL{site.URL},
+			})
 		}
 		var buf bytes.Buffer
-		err := tmpl.ExecuteTemplate(&buf, r.URL.Path, map[string]interface{}{"List": refererMap,
+		err := tmpl.ExecuteTemplate(&buf, r.URL.Path, map[string]interface{}{"List": referers,
 			"Durations": durations,
 		})
 		if err != nil {
@@ -359,7 +373,7 @@ func main() {
 	http_addr := flag.String("httpaddr", ":3129", "proxy http listen address")
 	https_addr := flag.String("httpsaddr", ":3128", "proxy https listen address")
 	go func() {
-		err := http.ListenAndServe(":9000", context.ClearHandler(whitelistService))
+		err := http.ListenAndServeTLS(":9000", "proxy.crt", "proxy.key", context.ClearHandler(whitelistService))
 		log.Fatalf("Error starting whitelist service - %v", err)
 	}()
 	proxy := goproxy.NewProxyHttpServer()

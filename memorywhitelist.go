@@ -151,18 +151,7 @@ type Site struct {
 }
 
 func (twm *MemoryWhitelistManager) RecentBlocks(limit int) []Site {
-	list := make([]Site, 0, twm.stack.Len())
-	for {
-		if len(list) == limit {
-			break
-		}
-		elem := twm.stack.Pop()
-		if elem == nil {
-			break
-		}
-		list = append(list, *elem)
-	}
-	return list
+	return twm.stack.View(limit)
 }
 
 func (twm *MemoryWhitelistManager) Current() []Entry {
