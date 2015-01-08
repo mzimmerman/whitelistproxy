@@ -200,7 +200,7 @@ func TestTemplates(t *testing.T) {
 	for _, n := range templates {
 		w := httptest.NewRecorder()
 		req, _ := http.NewRequest("get", n, nil)
-		whitelistService(w, req)
+		whitelistService(req, nil)
 		if w.Code != http.StatusOK {
 			t.Errorf("Error displaying %s - %s", n, w.Body.String())
 		}

@@ -7,15 +7,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{.}}</title>
 	<!-- Latest compiled and minified CSS -->
-	<link rel="stylesheet" href="https://proxy:9000/js/bootstrap.min.css">
+	<link rel="stylesheet" href="https://{{proxyHostname}}/js/bootstrap.min.css">
 	<!-- Optional theme -->
-	<link rel="stylesheet" href="https://proxy:9000/js/bootstrap-theme.min.css">
+	<link rel="stylesheet" href="https://{{proxyHostname}}/js/bootstrap-theme.min.css">
 
     <!-- HTML5 shim and Respond.js for IE8 support of HTML5 elements and media queries -->
     <!-- WARNING: Respond.js doesn't work if you view the page via file:// -->
     <!--[if lt IE 9]>
-      <script src="https://proxy:9000/js/html5shiv.min.js"></script>
-      <script src="https://proxy:9000/js/respond.min.js"></script>
+      <script src="https://{{proxyHostname}}/js/html5shiv.min.js"></script>
+      <script src="https://{{proxyHostname}}/js/respond.min.js"></script>
     <![endif]-->
   </head>
   <body>
@@ -25,9 +25,9 @@
 {{define "footer"}}
 	</div>
     <!-- jQuery (necessary for Bootstrap's JavaScript plugins) -->
-    <script src="https://proxy:9000/js/jquery.min.js"></script>
+    <script src="https://{{proxyHostname}}/js/jquery.min.js"></script>
 	<!-- Latest compiled and minified JavaScript -->
-	<script src="https://proxy:9000/js/bootstrap.min.js"></script>
+	<script src="https://{{proxyHostname}}/js/bootstrap.min.js"></script>
   </body>
 </html>
 {{end}}
@@ -45,7 +45,7 @@
 		{{range $_, $path := $paths}}
 			<li class="list-group-item">
 				{{range $dur := $.Durations}}
-					<a class="btn btn-{{$dur.S}} btn-xs" href="https://proxy:9000/add?url={{$.URL}}&host={{$.Host}}&match=false&path={{$path}}&duration={{$dur.D}}">{{$dur.N}}</a>
+					<a class="btn btn-{{$dur.S}} btn-xs" href="https://{{proxyHostname}}/add?url={{$.URL}}&host={{$.Host}}&match=false&path={{$path}}&duration={{$dur.D}}">{{$dur.N}}</a>
 				{{end}}
 			{{$.Host}}{{$path}}</li>
 		{{end}}
@@ -55,7 +55,7 @@
 	<ul class="list-group">
 		<li class="list-group-item">
 			{{range $dur := $.Durations}}
-				<a class="btn btn-{{$dur.S}} btn-xs" href="https://proxy:9000/add?url={{$.URL}}&host={{$.Host}}&match=false&duration={{$dur.D}}">{{$dur.N}}</a>
+				<a class="btn btn-{{$dur.S}} btn-xs" href="https://{{proxyHostname}}/add?url={{$.URL}}&host={{$.Host}}&match=false&duration={{$dur.D}}">{{$dur.N}}</a>
 			{{end}}
 		{{.Host}}</li>
 	</ul>
@@ -64,7 +64,7 @@
 		{{range $_, $root := rootDomains .Host}}
 			<li class="list-group-item">
 				{{range $dur := $.Durations}}
-					<a class="btn btn-{{$dur.S}} btn-xs" href="https://proxy:9000/add?url={{$.URL}}&host={{$root}}&match=true&duration={{$dur.D}}">{{$dur.N}}</a>
+					<a class="btn btn-{{$dur.S}} btn-xs" href="https://{{proxyHostname}}/add?url={{$.URL}}&host={{$root}}&match=true&duration={{$dur.D}}">{{$dur.N}}</a>
 				{{end}}
 			*.{{$root}}</li>
 		{{end}}
