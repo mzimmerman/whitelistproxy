@@ -145,7 +145,7 @@
 {{define "/auth"}}
 <html>
 	<body>
-		<h1>Please authenticate to add to the whitelist</h1>
+		{{if .Error}}<h1>{{.Error}}</h1>{{end}}
 		<table>
 			<tr><th>Host</th><th>Match Subdomains</th><th>Path</th><th>Duration</th></tr>
 			<tr><td>{{.Host}}</td><td>{{.MatchSubdomains}}</td><td>{{.Path}}</td><td>{{.Duration}}</td></tr>

@@ -183,11 +183,11 @@ func TestTemplates(t *testing.T) {
 		{"http://www.mdlottery.com", false, "http://referer"},
 	}
 	for _, p := range patterns {
-		wlm.Add(p.e)
+		wlm.Add(dummyIP, "", p.e, false)
 	}
 	for j, s := range testingSites {
 		u, _ := url.Parse(s.URL)
-		result := wlm.Check(Site{URL: u, Referer: s.Referer})
+		result := wlm.Check(dummyIP, Site{URL: u, Referer: s.Referer})
 		if result != s.Check {
 			t.Errorf("[%d] For URL %s - expected %t, got %t", j, u, s.Check, result)
 		}
@@ -200,6 +200,7 @@ func TestTemplates(t *testing.T) {
 	for _, n := range templates {
 		w := httptest.NewRecorder()
 		req, _ := http.NewRequest("get", n, nil)
+		req.RemoteAddr = "127.0.0.1:5000"
 		whitelistService(req, nil)
 		if w.Code != http.StatusOK {
 			t.Errorf("Error displaying %s - %s", n, w.Body.String())

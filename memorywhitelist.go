@@ -3,8 +3,10 @@ package main
 import (
 	"bufio"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/url"
 	"os"
 	"strings"
@@ -102,13 +104,17 @@ func (twm *MemoryWhitelistManager) add(proposed Entry, writeToDisk bool) int {
 	return returnVal
 }
 
-func (twm *MemoryWhitelistManager) Add(entry Entry) {
+func (twm *MemoryWhitelistManager) Add(ip net.IP, user string, entry Entry, authRequired bool) error {
+	if authRequired && user == "" {
+		return fmt.Errorf("Please authenticate to add to the whitelist")
+	}
 	twm.Lock()
 	defer twm.Unlock()
 	twm.add(entry, true)
+	return nil
 }
 
-func (twm *MemoryWhitelistManager) Check(site Site) bool {
+func (twm *MemoryWhitelistManager) Check(ip net.IP, site Site) bool {
 	twm.RLock()
 	defer twm.RUnlock()
 	result := twm.internalCheck(site)
@@ -150,11 +156,11 @@ type Site struct {
 	Referer string // using the "historical" spelling :)
 }
 
-func (twm *MemoryWhitelistManager) RecentBlocks(limit int) []Site {
+func (twm *MemoryWhitelistManager) RecentBlocks(ip net.IP, limit int) []Site {
 	return twm.stack.View(limit)
 }
 
-func (twm *MemoryWhitelistManager) Current() []Entry {
+func (twm *MemoryWhitelistManager) Current(ip net.IP) []Entry {
 	twm.Lock()
 	defer twm.Unlock()
 	return twm.entries

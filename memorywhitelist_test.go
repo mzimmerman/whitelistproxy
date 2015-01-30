@@ -2,11 +2,14 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"testing"
 	"time"
 )
+
+var dummyIP net.IP
 
 func BenchmarkMemoryManagerMatching(b *testing.B) {
 	fmt.Println()
@@ -43,7 +46,7 @@ func benchManager(wlm WhiteListManager, b *testing.B) {
 		{0, NewEntry("com", false, "/path", "", 0)}, // test that this is not added as it is superceded by path
 	}
 	for _, p := range patterns {
-		wlm.Add(p.e)
+		wlm.Add(dummyIP, "", p.e, false)
 	}
 	testingSites := []struct {
 		URL     string
@@ -89,7 +92,7 @@ func benchManager(wlm WhiteListManager, b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		for j, s := range testingSites {
 			u, _ := url.Parse(s.URL)
-			result := wlm.Check(Site{URL: u})
+			result := wlm.Check(dummyIP, Site{URL: u})
 			if result != s.Check {
 				b.Errorf("[%d] For URL %s - expected %t, got %t", j, u, s.Check, result)
 			}
@@ -141,7 +144,7 @@ func TestMemoryWhiteListManagerExpire(t *testing.T) {
 		if err != nil {
 			t.Error(err)
 		}
-		if got := twm.Check(Site{URL: parsed}); got != expected {
+		if got := twm.Check(dummyIP, Site{URL: parsed}); got != expected {
 			t.Errorf("got %t, expected %t, for site - %s", got, expected, u)
 		}
 	}

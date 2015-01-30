@@ -15,6 +15,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os/exec"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -64,10 +65,10 @@ func (auth LDAPConnector) ChangePass(user, oldpass, newpass string) error {
 var wlm WhiteListManager
 
 type WhiteListManager interface {
-	Add(e Entry)
-	Check(Site) bool
-	RecentBlocks(int) []Site
-	Current() []Entry
+	Add(net.IP, string, Entry, bool) error // fails with wrong user
+	Check(net.IP, Site) bool
+	RecentBlocks(net.IP, int) []Site
+	Current(ip net.IP) []Entry
 }
 
 var tmpl *template.Template
@@ -168,14 +169,23 @@ func makeWhitelistArgs(path, host string, u *url.URL, redirect bool) map[string]
 }
 
 var whiteListHandler goproxy.FuncReqHandler = func(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+	ip, _, err := net.SplitHostPort(req.RemoteAddr)
+	if err != nil {
+		panic(fmt.Sprintf("userip: %q is not IP:port", req.RemoteAddr))
+	}
+	userIP := net.ParseIP(ip)
+	if userIP == nil {
+		panic(fmt.Sprintf("userip: %q is not IP:port", req.RemoteAddr))
+	}
+
 	buf := bytes.Buffer{}
-	if ok := wlm.Check(Site{
+	if ok := wlm.Check(userIP, Site{
 		URL:     req.URL,
 		Referer: req.Referer(),
 	}); ok {
 		return req, nil
 	}
-	err := tmpl.ExecuteTemplate(&buf, "deny", map[string]interface{}{
+	err = tmpl.ExecuteTemplate(&buf, "deny", map[string]interface{}{
 		"Request": req,
 	})
 	if err != nil {
@@ -204,6 +214,15 @@ func responseFromResponseRecorder(req *http.Request, w *httptest.ResponseRecorde
 }
 
 func whitelistService(r *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+	ip, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		panic(fmt.Sprintf("userip: %q is not IP:port", r.RemoteAddr))
+	}
+	userIP := net.ParseIP(ip)
+	if userIP == nil {
+		panic(fmt.Sprintf("userip: %q is not IP:port", r.RemoteAddr))
+	}
+
 	w := httptest.NewRecorder()
 	if strings.HasPrefix(r.URL.Path, "/js") {
 		http.StripPrefix("/js", http.FileServer(http.Dir("js"))).ServeHTTP(w, r)
@@ -270,24 +289,25 @@ func whitelistService(r *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *h
 			if err == nil {
 				user, _ = session.Values["user"].(string)
 			}
-			if user == "" {
-				err = tmpl.ExecuteTemplate(w, "/auth", map[string]interface{}{
-					"URL":            r.Form.Get("url"),
-					"Path":           r.Form.Get("path"),
-					"Host":           r.Form.Get("host"),
-					"MatchSubstring": r.Form.Get("match"),
-				})
-				return responseFromResponseRecorder(r, w)
-			}
 		} else {
-			user = strings.Split(r.RemoteAddr, ":")[0]
+			user = ip
 		}
 		entry := NewEntry(decHost, r.Form.Get("match") == "true", decPath, user, duration)
-		wlm.Add(entry) // wait till host is added, otherwise we might get blocked again on redirect
+		err = wlm.Add(userIP, user, entry, ldc.Address != "") // wait till host is added, otherwise we might get blocked again on redirect
+		if err != nil {
+			err = tmpl.ExecuteTemplate(w, "/auth", map[string]interface{}{
+				"URL":            r.Form.Get("url"),
+				"Path":           r.Form.Get("path"),
+				"Host":           r.Form.Get("host"),
+				"MatchSubstring": r.Form.Get("match"),
+				"Error":          err,
+			})
+			return responseFromResponseRecorder(r, w)
+		}
 		http.Redirect(w, r, decURL, http.StatusMovedPermanently)
 		return responseFromResponseRecorder(r, w)
 	default: // case: "/list"
-		list := wlm.RecentBlocks(50) // get up to the last 50
+		list := wlm.RecentBlocks(userIP, 50) // get up to the last 50
 		type rg struct {
 			Referer string
 			Sites   []*url.URL
@@ -325,7 +345,7 @@ func whitelistService(r *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *h
 		}()
 		go func() {
 			now := time.Now()
-			for _, e := range wlm.Current() {
+			for _, e := range wlm.Current(userIP) {
 				if e.Expired(now) {
 					continue
 				}
@@ -355,7 +375,8 @@ func init() {
 	ldap_address := flag.String("ldapaddress", "", "the address and port (addr:port) of the LDAP server")
 	ldap_bind_prefix := flag.String("ldapprefix", "uid=", "the prefix used before the userid in an LDAP bind")
 	ldap_bind_suffix := flag.String("ldapsuffix", ",ou=People,ou=whitelistproxy,ou=com", "the suffix used after the userid in an LDAP bind")
-	whitelist_filename := flag.String("whitelistfile", "whitelist.json", "The path/name of the file where the whitelist will be read/written to")
+	whitelist_filename := flag.String("whitelistfile", "", "The path/name of the file where the whitelist will be read/written to")
+	zones_filename := flag.String("zonesfile", "", "The path/name of the file where the configuration of zones will be read from")
 	verbose = flag.Bool("v", true, "should every proxy request be logged to stdout")
 	http_addr = flag.String("httpaddr", ":3129", "proxy http listen address")
 	https_addr = flag.String("httpsaddr", ":3128", "proxy https listen address")
@@ -376,9 +397,18 @@ func init() {
 	}
 
 	var err error
-	wlm, err = NewMemoryWhitelistManager(*whitelist_filename)
+	switch {
+	case *zones_filename != "" && *whitelist_filename != "":
+		panic(fmt.Sprintf("Cannot use both zonesfile and whitelistfile options - %s - %s", *zones_filename, *whitelist_filename))
+	case *zones_filename != "":
+		wlm, err = NewZoneManager(*zones_filename)
+	case *whitelist_filename != "":
+		wlm, err = NewMemoryWhitelistManager(*whitelist_filename)
+	default:
+		wlm, err = NewMemoryWhitelistManager("whitelist.json") // legacy default
+	}
 	if err != nil {
-		log.Fatalf("Error loading MemoryWhitelist - %v", err)
+		log.Fatalf("Error loading Whitelist - %v", err)
 	}
 	tmpl, err = template.New("default").Funcs(template.FuncMap{
 		"paths":             paths,
@@ -401,6 +431,7 @@ func main() {
 	}
 
 	proxy.NonproxyHandler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		log.Printf("Remote ip - %s - \n%s", req.RemoteAddr, debug.Stack())
 		if req.Host == "" {
 			fmt.Fprintln(w, "Cannot handle requests without Host header, e.g., HTTP 1.0")
 			return
@@ -475,7 +506,8 @@ func main() {
 				log.Printf("Guessing with %s", host)
 			}
 			connectReq := &http.Request{
-				Method: "CONNECT",
+				RemoteAddr: c.RemoteAddr().String(),
+				Method:     "CONNECT",
 				URL: &url.URL{
 					Opaque: host,
 					Host:   net.JoinHostPort(host, "443"),
