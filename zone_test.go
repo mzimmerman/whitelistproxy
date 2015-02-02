@@ -6,19 +6,18 @@ import (
 	"net/url"
 	"reflect"
 	"testing"
-	"time"
 )
 
 func TestZones(t *testing.T) {
 	zoneBufs := []string{
 		"{\"User\":\"ab\",\"Network\":\"10.10.10.0/24\",\"Whitelist\":\"ab.json\"}",
 		"{\"User\":\"cd\",\"Network\":\"10.10.0.0/16\",\"Whitelist\":\"cd.json\"}",
-		"{\"User\":\"\",\"Network\":\"0.0.0.0/0\",\"Whitelist\":\"guest.json\"}",
+		"{\"User\":\"\",\"Network\":\"172.16.0.0/12\",\"Whitelist\":\"guest.json\"}",
 	}
 	zones := []Zone{
 		{User: "ab", Net: net.IPNet{IP: []byte{10, 10, 10, 0}, Mask: []byte{255, 255, 255, 0}}, Whitelist: "ab.json"},
 		{User: "cd", Net: net.IPNet{IP: []byte{10, 10, 0, 0}, Mask: []byte{255, 255, 0, 0}}, Whitelist: "cd.json"},
-		{User: "", Net: net.IPNet{IP: []byte{0, 0, 0, 0}, Mask: []byte{0, 0, 0, 0}}, Whitelist: "guest.json"},
+		{User: "", Net: net.IPNet{IP: []byte{172, 16, 0, 0}, Mask: []byte{255, 240, 0, 0}}, Whitelist: "guest.json"},
 	}
 	for x, buf := range zoneBufs {
 		z := Zone{}
@@ -34,10 +33,11 @@ func TestZones(t *testing.T) {
 		ip   net.IP
 		isin []bool
 	}{
-		{net.IP{10, 10, 10, 0}, []bool{true, true, true}},
-		{net.IP{192, 168, 1, 1}, []bool{false, false, true}},
-		{net.IP{1, 1, 1, 1}, []bool{false, false, true}},
-		{net.IP{10, 10, 1, 1}, []bool{false, true, true}},
+		{net.IP{10, 10, 10, 0}, []bool{true, true, false}},
+		{net.IP{192, 168, 1, 1}, []bool{false, false, false}},
+		{net.IP{1, 1, 1, 1}, []bool{false, false, false}},
+		{net.IP{10, 10, 1, 1}, []bool{false, true, false}},
+		{net.IP{172, 16, 1, 1}, []bool{false, false, true}},
 	}
 	for x := range iptests {
 		for y := range iptests[x].isin {
@@ -49,38 +49,39 @@ func TestZones(t *testing.T) {
 }
 
 func TestZoneManager(t *testing.T) {
-	ioutil.WriteFile("zonemanagertests/zm.json", []byte(`{"User":"cd.com","Network":"10.10.10.0/24","Whitelist":"zonemanagertests/ab.json"}
-{"User":"ab.com","Network":"10.10.0.0/16","Whitelist":"zonemanagertests/cd.json"}
-{"User":"","Network":"0.0.0.0/0","Whitelist":"zonemanagertests/guest.json"}
-`), 666)
+	ioutil.WriteFile("zonemanagertests/zm.json", []byte(`{"User":"ab","Network":"10.10.10.0/24","Whitelist":"zonemanagertests/ab.json"}
+{"User":"cd","Network":"10.10.0.0/16","Whitelist":"zonemanagertests/cd.json"}
+{"User":"","Network":"10.0.0.0/8","Whitelist":"zonemanagertests/guest.json"}
+{"User":"one,two,three","Network":"172.16.0.0/12","Whitelist":"zonemanagertests/multiple.json"}
+`), 0666)
 	ioutil.WriteFile("zonemanagertests/ab.json", []byte(`{"Host":"ab.com","MatchSubdomains":false,"Path":"","Creator":"","Created":"2015-02-02T09:19:19.195701657-05:00","Expires":"2015-02-02T09:19:19.195701657-05:00"}
-`), 666)
+`), 0666)
 	ioutil.WriteFile("zonemanagertests/cd.json", []byte(`{"Host":"cd.com","MatchSubdomains":false,"Path":"","Creator":"","Created":"2015-02-02T09:19:19.195701657-05:00","Expires":"2015-02-02T09:19:19.195701657-05:00"}
-`), 666)
+`), 0666)
 	ioutil.WriteFile("zonemanagertests/guest.json", []byte(`{"Host":"guest.com","MatchSubdomains":false,"Path":"","Creator":"","Created":"2015-02-02T09:19:19.195701657-05:00","Expires":"2015-02-02T09:19:19.195701657-05:00"}
-`), 666)
+`), 0666)
+	ioutil.WriteFile("zonemanagertests/multiple.json", []byte(`{"Host":"multiple.com","MatchSubdomains":false,"Path":"","Creator":"","Created":"2015-02-02T09:19:19.195701657-05:00","Expires":"2015-02-02T09:19:19.195701657-05:00"}
+`), 0666)
+
 	zm, err := NewZoneManager("zonemanagertests/zm.json")
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
 	testingSites := []struct {
-		ip         net.IP
-		url        string
-		check      bool
-		numEntries int
-		numBlocks  int
-		addSuccess bool
+		ip        net.IP
+		url       string
+		check     bool
+		numBlocks int
 	}{
-		{net.IP{10, 10, 10, 0}, "http://ab.com", true, 1, 0, false},
-		{net.IP{10, 10, 10, 0}, "http://cd.com", false, 1, 1, true},
-		{net.IP{10, 10, 10, 0}, "http://cd.com", true, 2, 0, false}, // blocked value reduced since site was whitelisted
-		{net.IP{10, 10, 1, 0}, "http://ab.com", false, 1, 1, true},
-		{net.IP{10, 10, 1, 0}, "http://cd.com", true, 2, 0, false}, // blocked value reduced since site was whitelisted
-		{net.IP{10, 10, 1, 0}, "http://ab.com", true, 2, 0, false}, // blocked value reduced since site was whitelisted
-		{net.IP{192, 168, 1, 1}, "http://guest.com", true, 1, 0, false},
-		{net.IP{192, 168, 1, 1}, "http://fail.com", false, 1, 1, true},
-		{net.IP{192, 168, 1, 1}, "http://fail.com", true, 2, 0, false}, // blocked value reduced since site was whitelisted
+		{net.IP{10, 10, 10, 0}, "http://ab.com", true, 0},
+		{net.IP{10, 10, 10, 0}, "http://cd.com", false, 1},
+		{net.IP{10, 10, 1, 0}, "http://ab.com", false, 1},
+		{net.IP{10, 10, 1, 0}, "http://cd.com", true, 1},
+		{net.IP{10, 168, 1, 1}, "http://guest.com", true, 0},
+		{net.IP{10, 168, 1, 1}, "http://fail.com", false, 1},
+		{net.IP{172, 16, 1, 1}, "http://fail.com", false, 1},
 	}
+
 	for j, s := range testingSites {
 		u, _ := url.Parse(s.url)
 		if want, got := s.check, zm.Check(s.ip, Site{URL: u}); want != got {
@@ -93,17 +94,44 @@ func TestZoneManager(t *testing.T) {
 		for _, block := range zm.RecentBlocks(s.ip, 50) {
 			t.Log(block)
 		}
-		if want, got := s.numEntries, len(zm.Current(s.ip)); want != got {
-			t.Errorf("[%d] - # of entries wanted %v, got %v", j, want, got)
-		}
 		t.Logf("Current entries are:")
 		for _, entry := range zm.Current(s.ip) {
 			t.Log(entry)
 		}
-		if !s.check { // we were blocked, add it to the whitelist
-			err = zm.Add(s.ip, u.Host, NewEntry(u.Host, false, "", "", time.Second), true)
-			if err != nil && s.addSuccess { // fail if there should not have been an error
-				t.Errorf("%v", err)
+	}
+	testingAdds := []struct {
+		ip          net.IP
+		user        string
+		requireAuth bool
+		err         error
+	}{
+		{net.IP{1, 1, 1, 1}, "", true, NoMatchingZone("")},
+		{net.IP{1, 1, 1, 1}, "", false, NoMatchingZone("")},
+		{net.IP{10, 1, 1, 1}, "", false, nil},                    // no user auth requirements
+		{net.IP{10, 1, 1, 1}, "", true, AuthenticationError("")}, // User's required to be authenticated, but no listed users
+		{net.IP{10, 10, 1, 1}, "", true, AuthenticationError("")},
+		{net.IP{10, 10, 1, 1}, "wronguser", true, AuthorizationError("")},
+		{net.IP{10, 10, 1, 1}, "cd", true, nil},
+		{net.IP{172, 16, 1, 1}, "two", true, nil},
+	}
+	for x, ta := range testingAdds {
+		err = zm.Add(ta.ip, ta.user, NewEntry("host.com", false, "", "", 0), ta.requireAuth)
+		switch ta.err.(type) {
+		case NoMatchingZone:
+			if _, ok := err.(NoMatchingZone); !ok {
+				t.Errorf("[%d] - expected NoMatchingZoneError - %v", x, err)
+			}
+		case AuthenticationError:
+			if _, ok := err.(AuthenticationError); !ok {
+				t.Errorf("[%d] - expected AuthenticationError - %v", x, err)
+			}
+		case AuthorizationError:
+			if _, ok := err.(AuthorizationError); !ok {
+				t.Errorf("[%d] - expected AuthorizationError - %v", x, err)
+			}
+		default:
+			if err != nil {
+				t.Errorf("[%d] - expected nil, got %v", x, err)
 			}
 		}
 	}

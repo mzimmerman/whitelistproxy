@@ -8,6 +8,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"strings"
 )
 
 type Zone struct {
@@ -47,19 +48,41 @@ func (zm ZoneManager) find(ip net.IP) *Zone { // returns nil on no match
 	return nil
 }
 
+type AuthenticationError string
+type AuthorizationError string
+type NoMatchingZone string
+
+func (nmz NoMatchingZone) Error() string {
+	return string(nmz)
+}
+
+func (ae AuthenticationError) Error() string {
+	return string(ae)
+}
+
+func (ae AuthorizationError) Error() string {
+	return string(ae)
+}
+
 func (zm ZoneManager) Add(ip net.IP, user string, e Entry, authRequired bool) error {
 	zone := zm.find(ip)
 	if zone == nil {
-		return fmt.Errorf("Network %s not found in any zone", ip)
+		return NoMatchingZone(fmt.Sprintf("Network %s not found in any zone", ip))
 	}
 	if authRequired {
-		if zone.User != "" {
-			if user == "" {
-				return fmt.Errorf("Please authenticate to add to the whitelist for network %s", zone.Net)
+		if user == "" {
+			return AuthenticationError(fmt.Sprintf("Authentication is required to add a site in network %s", zone.Net))
+		}
+		found := zone.User == ""
+		authorizedUsers := strings.Split(zone.User, ",")
+		for _, au := range authorizedUsers {
+			if au == user {
+				found = true
+				break
 			}
-			if user != zone.User {
-				return fmt.Errorf("User %s not authorized to add site in network %s, only user %s is allowed", user, zone.Net, zone.User)
-			}
+		}
+		if !found {
+			return AuthorizationError(fmt.Sprintf("User %s not authorized to add site in network %s, only one of [%s] is allowed", user, zone.Net, zone.User))
 		}
 	}
 	zone.wlm.Add(ip, user, e, authRequired)
