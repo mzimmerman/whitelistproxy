@@ -35,8 +35,7 @@ func (s *Stack) Push(site Site) {
 	}
 }
 
-// Remove the top element from the stack and return it's value
-// If the stack is empty, return nil
+// Return the (num) most recently blocked sites
 func (s *Stack) View(num int) (sites []Site) {
 	s.Lock()
 	defer s.Unlock()

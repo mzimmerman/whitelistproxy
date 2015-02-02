@@ -12,7 +12,7 @@ import (
 
 type Zone struct {
 	User      string                  // username to require for authentication
-	Net       *net.IPNet              // nil means everything
+	Net       net.IPNet               // nil means everything
 	Whitelist string                  // filename of whitelist
 	wlm       *MemoryWhitelistManager `json:"-"`
 }
@@ -29,7 +29,8 @@ func (z *Zone) UnmarshalJSON(data []byte) error {
 	}
 	z.User = tmp.User
 	z.Whitelist = tmp.Whitelist
-	_, z.Net, err = net.ParseCIDR(tmp.Network)
+	_, tmpNet, err := net.ParseCIDR(tmp.Network)
+	z.Net = *tmpNet
 	return err
 }
 
@@ -51,11 +52,15 @@ func (zm ZoneManager) Add(ip net.IP, user string, e Entry, authRequired bool) er
 	if zone == nil {
 		return fmt.Errorf("Network %s not found in any zone", ip)
 	}
-	if authRequired && user != zone.User {
-		if user == "" {
-			return fmt.Errorf("Please authenticate to add to the whitelist for network %s", zone.Net)
+	if authRequired {
+		if zone.User != "" {
+			if user == "" {
+				return fmt.Errorf("Please authenticate to add to the whitelist for network %s", zone.Net)
+			}
+			if user != zone.User {
+				return fmt.Errorf("User %s not authorized to add site in network %s, only user %s is allowed", user, zone.Net, zone.User)
+			}
 		}
-		return fmt.Errorf("User %s not authorized to add site in network %s", user, ip)
 	}
 	zone.wlm.Add(ip, user, e, authRequired)
 	return nil

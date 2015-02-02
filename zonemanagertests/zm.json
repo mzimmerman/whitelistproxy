@@ -1,0 +1,3 @@
+{"User":"cd.com","Network":"10.10.10.0/24","Whitelist":"zonemanagertests/ab.json"}
+{"User":"ab.com","Network":"10.10.0.0/16","Whitelist":"zonemanagertests/cd.json"}
+{"User":"","Network":"0.0.0.0/0","Whitelist":"zonemanagertests/guest.json"}
