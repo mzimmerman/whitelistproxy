@@ -6,29 +6,37 @@
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{.}}</title>
-	<!-- Latest compiled and minified CSS -->
-	<link rel="stylesheet" href="https://{{proxyHostname}}/js/bootstrap.min.css">
-	<!-- Optional theme -->
-	<link rel="stylesheet" href="https://{{proxyHostname}}/js/bootstrap-theme.min.css">
-
-    <!-- HTML5 shim and Respond.js for IE8 support of HTML5 elements and media queries -->
-    <!-- WARNING: Respond.js doesn't work if you view the page via file:// -->
-    <!--[if lt IE 9]>
-      <script src="https://{{proxyHostname}}/js/html5shiv.min.js"></script>
-      <script src="https://{{proxyHostname}}/js/respond.min.js"></script>
-    <![endif]-->
   </head>
   <body>
 	<div class="container-fluid">
 {{end}}
 
 {{define "footer"}}
-	</div>
+		</div>
+	</body>
     <!-- jQuery (necessary for Bootstrap's JavaScript plugins) -->
     <script src="https://{{proxyHostname}}/js/jquery.min.js"></script>
+	<script type="text/javascript">
+	    $(document).ready(function(){
+			console.log("in ready func")
+	            if (document.createStyleSheet){
+	                document.createStyleSheet('https://{{proxyHostname}}/js/bootstrap.min.css');
+					document.createStyleSheet('https://{{proxyHostname}}/js/bootstrap-theme.min.css');
+	            } else {
+	                $("head").append($("<link rel='stylesheet' href='https://{{proxyHostname}}/js/bootstrap.min.css' type='text/css' media='screen' />"));
+					$("head").append($("<link rel='stylesheet' href='https://{{proxyHostname}}/js/bootstrap-theme.min.css' type='text/css' media='screen' />"));
+	            }
+		    }
+		);
+	</script>
 	<!-- Latest compiled and minified JavaScript -->
 	<script src="https://{{proxyHostname}}/js/bootstrap.min.js"></script>
-  </body>
+	<!-- HTML5 shim and Respond.js for IE8 support of HTML5 elements and media queries -->
+    <!-- WARNING: Respond.js doesn't work if you view the page via file:// -->
+    <!--[if lt IE 9]>
+      <script src="https://{{proxyHostname}}/js/html5shiv.min.js"></script>
+      <script src="https://{{proxyHostname}}/js/respond.min.js"></script>
+    <![endif]-->
 </html>
 {{end}}
 
@@ -118,13 +126,13 @@
 			</div>
 		</div>
 	{{end}}
-	{{template "footer"}}
+	{{template "footer" .}}
 {{end}}
 
 {{define "/current"}}
 <html>
-	<body>
-		<h1>All allowed sites</h1>
+	{{template "header" "Currently allowed sites"}}
+		<h1>Currently allowed sites</h1>
 		<table>
 			<tr><th>Host</th><th>Match Subdomains</th><th>Path</th><th>Creator</th><th>Created</th><th>Expires</th></tr>
 			{{range .List}}
@@ -138,7 +146,7 @@
 				</tr>
 			{{end}}
 		</table>
-	</body>
+	{{template "footer" .}}
 </html>
 {{end}}
 
