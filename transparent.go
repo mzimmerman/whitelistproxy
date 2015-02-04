@@ -175,7 +175,7 @@ var whiteListHandler goproxy.FuncReqHandler = func(req *http.Request, ctx *gopro
 	}
 	userIP := net.ParseIP(ip)
 	if userIP == nil {
-		panic(fmt.Sprintf("userip: %q is not IP:port", req.RemoteAddr))
+		panic(fmt.Sprintf("userip: %q is not IP", ip))
 	}
 
 	buf := bytes.Buffer{}
@@ -183,14 +183,17 @@ var whiteListHandler goproxy.FuncReqHandler = func(req *http.Request, ctx *gopro
 		URL:     req.URL,
 		Referer: req.Referer(),
 	}); ok {
+		log.Printf("IP %s visited - %v - referred from - %v", ip, req.URL, req.Referer())
 		return req, nil
 	}
+	log.Printf("IP %s was blocked visiting - %v - referred from - %v", ip, req.URL, req.Referer())
 	err = tmpl.ExecuteTemplate(&buf, "deny", map[string]interface{}{
 		"Request": req,
 	})
 	if err != nil {
 		buf.WriteString(fmt.Sprintf("<html><body>Requested destination not in whitelist, error writing template - %v", err))
 	}
+
 	return nil, &http.Response{
 		StatusCode:    400,
 		ProtoMajor:    1,
@@ -220,7 +223,7 @@ func whitelistService(r *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *h
 	}
 	userIP := net.ParseIP(ip)
 	if userIP == nil {
-		panic(fmt.Sprintf("userip: %q is not IP:port", r.RemoteAddr))
+		panic(fmt.Sprintf("userip: %q is not IP", ip))
 	}
 
 	w := httptest.NewRecorder()
@@ -234,9 +237,11 @@ func whitelistService(r *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *h
 		r.ParseForm()
 		err := ldc.Authenticate(r.Form.Get("user"), r.Form.Get("pass"))
 		if err != nil {
+			log.Printf("Unsuccessful authentication as %s from %s", r.Form.Get("user"), ip)
 			w.Write([]byte(fmt.Sprintf("Error authenticating - %v", err)))
 			return responseFromResponseRecorder(r, w)
 		}
+		log.Printf("User %s authenticated successfully from %s", r.Form.Get("user"), ip)
 		session, _ := store.Get(r, "session")
 		session.Values["user"] = r.Form.Get("user")
 		err = session.Save(r, w)
@@ -304,6 +309,7 @@ func whitelistService(r *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *h
 			})
 			return responseFromResponseRecorder(r, w)
 		}
+		log.Printf("User %s from %s added site - %#v", user, ip, entry)
 		http.Redirect(w, r, decURL, http.StatusMovedPermanently)
 		return responseFromResponseRecorder(r, w)
 	default: // case: "/list"
