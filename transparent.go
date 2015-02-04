@@ -15,7 +15,6 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os/exec"
-	"runtime/debug"
 	"strings"
 	"time"
 
@@ -383,7 +382,7 @@ func init() {
 	ldap_bind_suffix := flag.String("ldapsuffix", ",ou=People,ou=whitelistproxy,ou=com", "the suffix used after the userid in an LDAP bind")
 	whitelist_filename := flag.String("whitelistfile", "", "The path/name of the file where the whitelist will be read/written to")
 	zones_filename := flag.String("zonesfile", "", "The path/name of the file where the configuration of zones will be read from")
-	verbose = flag.Bool("v", true, "should every proxy request be logged to stdout")
+	verbose = flag.Bool("v", false, "should every proxy request be logged to stdout")
 	http_addr = flag.String("httpaddr", ":3129", "proxy http listen address")
 	https_addr = flag.String("httpsaddr", ":3128", "proxy https listen address")
 	proxy_hostname = flag.String("hostname", "whitelistproxy", "The hostname of the whitelistproxy in order to manipulate the whitelist")
@@ -437,7 +436,6 @@ func main() {
 	}
 
 	proxy.NonproxyHandler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		log.Printf("Remote ip - %s - \n%s", req.RemoteAddr, debug.Stack())
 		if req.Host == "" {
 			fmt.Fprintln(w, "Cannot handle requests without Host header, e.g., HTTP 1.0")
 			return
