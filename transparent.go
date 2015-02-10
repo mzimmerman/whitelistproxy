@@ -40,7 +40,7 @@ type LDAPConnector struct {
 }
 
 func (auth LDAPConnector) Authenticate(user, pass string) error {
-	conn, err := ldap.Dial("tcp", auth.Address)
+	conn, err := ldap.DialTLS("tcp", auth.Address, &tls.Config{InsecureSkipVerify: true})
 	if err != nil {
 		return err
 	}
@@ -48,7 +48,7 @@ func (auth LDAPConnector) Authenticate(user, pass string) error {
 }
 
 func (auth LDAPConnector) ChangePass(user, oldpass, newpass string) error {
-	conn, err := ldap.Dial("tcp", auth.Address)
+	conn, err := ldap.DialTLS("tcp", auth.Address, &tls.Config{InsecureSkipVerify: true})
 	if err != nil {
 		return err
 	}
