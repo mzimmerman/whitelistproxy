@@ -118,7 +118,7 @@ func (twm *MemoryWhitelistManager) Check(ip net.IP, site Site) bool {
 	twm.RLock()
 	defer twm.RUnlock()
 	result := twm.internalCheck(site)
-	if !result {
+	if !result && site.Referer != "pressl" {
 		twm.stack.Push(site)
 	}
 	return result

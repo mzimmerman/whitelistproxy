@@ -82,7 +82,7 @@
 {{define "deny"}}
 	{{template "header" "Access Denied"}}
 		<h1>Access Denied</h1>
-		<h2>{{.Request.Host}} is not in the whitelist.</h2>
+		<h2>{{.Request.Host}} is not in the whitelist from IP {{.Request.RemoteAddr}}.</h2>
 		{{template "whitelist" makeWhitelistArgs .Request.URL.Path .Request.Host .Request.URL true}}
 	{{template "footer" .}}
 {{end}}

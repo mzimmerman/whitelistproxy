@@ -78,6 +78,9 @@ func TestZoneManager(t *testing.T) {
 		{net.IP{10, 10, 1, 0}, "http://ab.com", false, 1},
 		{net.IP{10, 10, 1, 0}, "http://cd.com", true, 1},
 		{net.IP{10, 168, 1, 1}, "http://guest.com", true, 0},
+		{net.IP{10, 168, 1, 1}, "http://guest.com:80", true, 0},
+		{net.IP{10, 168, 1, 1}, "http://guest.com:443", true, 0},
+		{net.IP{10, 168, 1, 1}, "http://guest.com:2000", false, 0},
 		{net.IP{10, 168, 1, 1}, "http://fail.com", false, 1},
 		{net.IP{172, 16, 1, 1}, "http://fail.com", false, 1},
 	}

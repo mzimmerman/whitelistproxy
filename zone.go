@@ -8,6 +8,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -93,6 +94,22 @@ func (zm ZoneManager) Check(ip net.IP, site Site) bool {
 	zone := zm.find(ip)
 	if zone == nil {
 		return false // if no zones match, deny
+	}
+	// err can occur when no port # is found, host is empty string in that case
+	host, port, err := net.SplitHostPort(site.URL.Host)
+	if err == nil {
+		site.URL.Host = host
+	}
+	if port != "" {
+		portNum, err := strconv.Atoi(port)
+		if err != nil {
+			log.Printf("Invalid port number - %s - %v", port, err)
+			return false
+		}
+		if portNum != 80 && portNum != 443 {
+			log.Printf("This proxy only supports traffic on port 80 and 443")
+			return false
+		}
 	}
 	return zone.wlm.Check(ip, site)
 }

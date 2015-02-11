@@ -452,10 +452,30 @@ func main() {
 	proxy.OnRequest(goproxy.DstHostIs(*proxy_hostname)).DoFunc(whitelistService)
 	proxy.OnRequest().DoFunc(whiteListHandler)
 	proxy.OnRequest().HandleConnectFunc(func(host string, ctx *goproxy.ProxyCtx) (*goproxy.ConnectAction, string) {
+		ip, _, err := net.SplitHostPort(ctx.Req.RemoteAddr)
+		if err != nil {
+			panic(fmt.Sprintf("userip: %q is not IP:port", ctx.Req.RemoteAddr))
+		}
+		userIP := net.ParseIP(ip)
+		if userIP == nil {
+			panic(fmt.Sprintf("userip: %q is not IP", ip))
+		}
+		log.Printf("Handled connect from ip - %s - for host %s", ip, host)
+		if err != nil {
+			log.Printf("Error creating URL for host %s", host)
+		} else if host != *proxy_hostname && wlm.Check(userIP, Site{
+			URL:     ctx.Req.URL,
+			Referer: "pressl",
+		}) {
+			// don't tear down the SSL session
+			return &goproxy.ConnectAction{
+				Action: goproxy.ConnectAccept,
+			}, host + ":443"
+		}
 		return &goproxy.ConnectAction{
 			Action:    goproxy.ConnectMitm,
 			TLSConfig: goproxy.TLSConfigFromCA(&cert),
-		}, host
+		}, host + ":443"
 	})
 
 	go func() {
@@ -514,11 +534,13 @@ func main() {
 				Method:     "CONNECT",
 				URL: &url.URL{
 					Opaque: host,
-					Host:   net.JoinHostPort(host, "443"),
+					Host:   host,
 				},
 				Host:   host,
 				Header: make(http.Header),
 			}
+			log.Printf("Making faux CONNECT request with URL - %s", connectReq.URL)
+			log.Printf("Request.URL.Host - %v", connectReq.URL.Host)
 			resp := dumbResponseWriter{tlsConn}
 			proxy.ServeHTTP(resp, connectReq)
 		}(c)
