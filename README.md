@@ -2,11 +2,12 @@
 
 # Whitelist Proxy
 
-This transparent proxy does a man-in-the-middle on all http and https connections It requires that it sees all the packets in the route to the destination.  Linux iptables rules deal with changing the source/destination IPs to act transparently, but you do need to setup your network configuration the proxy is a mandatory stop on the outgoing route.  Primarily you can do this by placing the proxy inline.  whitelistproxy does not have any WCCP support itself; patches welcome.
+This transparent proxy does a man-in-the-middle on all http and https (when not whitelisted) connections.  It requires that it sees all the packets in the route to the destination.  Linux iptables rules deal with changing the source/destination IPs to act transparently, but you do need to setup your network configuration in a way so that the proxy is a mandatory stop on the outgoing route.  Primarily you can do this by placing the proxy inline.  This is required since whitelistproxy does not have any WCCP support itself; patches welcome.
 
 # Features
 - Transparent
 - HTTPS proxying through MITM (Need to provide a CA certificate)
+- Tunnels HTTPS when endpoints are whitelisted
 - Supports non-SNI enabled clients (when host running proxy also serves dns through dnsmasq)
 - LDAP authentication required to add site to the whitelist (Optional)
 - Suggestions and pull requests welcomed
