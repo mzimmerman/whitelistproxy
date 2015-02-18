@@ -12,6 +12,9 @@
 {{end}}
 
 {{define "footer"}}
+			<a href="https://{{proxyHostname}}"><span class="label label-primary">Recent Blocks</span></a>
+			<a href="https://{{proxyHostname}}/current"><span class="label label-success">Current Whitelist</span></a>
+			<a href="https://{{proxyHostname}}/network"><span class="label label-danger">Outbound Network Activity</span></a>
 		</div>
 	</body>
     <!-- jQuery (necessary for Bootstrap's JavaScript plugins) -->
@@ -144,6 +147,21 @@
 					<td>{{.Created}}</td>
 					<td>{{if .Created.Equal .Expires}}Never{{else}}{{.Expires}}{{end}}</td>
 				</tr>
+			{{end}}
+		</table>
+	{{template "footer" .}}
+</html>
+{{end}}
+
+{{define "/network"}}
+<html>
+	{{template "header" "Recent Network Traffic"}}
+		<h1>Recent Network Traffic</h1>
+		{{if .Header}}<h2>{{.Header}}</h2>{{end}}
+		<table>
+			<tr><th>Entry</th></tr>
+			{{range .List}}
+				<tr><td>{{.}}</td></tr>
 			{{end}}
 		</table>
 	{{template "footer" .}}

@@ -372,6 +372,59 @@ func whitelistService(r *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *h
 			io.Copy(w, &buf)
 		}
 		return responseFromResponseRecorder(r, w)
+	case "/network":
+		header := ""                          // any overarching message to show to the user
+		currentList := make([]string, 0, 100) // a decent estimate on starting lines
+		cmd := exec.Command(
+			"/usr/bin/sudo",
+			"/usr/bin/journalctl",
+			"-r",
+			"-o", "short",
+			"--no-pager",
+			"-n", "1000",
+		)
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			header = fmt.Sprintf("Error getting output - %v - %s", err, output)
+		} else {
+			lines := bufio.NewScanner(bytes.NewReader(output))
+			zm, ok := wlm.(*ZoneManager)
+			var zone *Zone
+			if ok {
+				zone = zm.Find(userIP)
+				if zone == nil {
+					header = fmt.Sprintf("Zone not found for IP %s, no data", ip)
+				}
+			}
+			for lines.Scan() {
+				line := lines.Text()
+				if zone != nil {
+					// only show items that are in the zone
+					// filter by IP
+					split := strings.Split(line," ")
+					logit := false
+					for _, s := range split {
+						if 
+					}
+					if logit {
+					currentList = append(currentList, line)
+					}
+				} else if !ok {
+					// show all items since no ZoneManager is used
+					currentList = append(currentList, line)
+				}
+			}
+		}
+
+		var buf bytes.Buffer
+		err = tmpl.ExecuteTemplate(&buf, "/network", map[string]interface{}{"Header": header, "List": currentList})
+		if err != nil {
+			w.WriteHeader(500)
+			w.Write([]byte(fmt.Sprintf("Error fetching latest Network Traffic - %v", err)))
+		} else {
+			io.Copy(w, &buf)
+		}
+		return responseFromResponseRecorder(r, w)
 	}
 }
 

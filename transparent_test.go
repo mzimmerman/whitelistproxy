@@ -2,8 +2,8 @@ package main
 
 import (
 	"fmt"
+	"io/ioutil"
 	"net/http"
-	"net/http/httptest"
 	"net/url"
 	"os"
 	"reflect"
@@ -196,14 +196,15 @@ func TestTemplates(t *testing.T) {
 		"/auth",
 		"/list",
 		"/current",
+		"/network",
 	}
 	for _, n := range templates {
-		w := httptest.NewRecorder()
 		req, _ := http.NewRequest("get", n, nil)
 		req.RemoteAddr = "127.0.0.1:5000"
-		whitelistService(req, nil)
-		if w.Code != http.StatusOK {
-			t.Errorf("Error displaying %s - %s", n, w.Body.String())
+		_, resp := whitelistService(req, nil)
+		if resp.StatusCode != http.StatusOK {
+			body, _ := ioutil.ReadAll(resp.Body)
+			t.Errorf("Error displaying %s - %s", n, body)
 		}
 	}
 }

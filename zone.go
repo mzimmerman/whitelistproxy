@@ -40,7 +40,7 @@ func (z Zone) contains(ip net.IP) bool {
 	return z.Net.Contains(ip)
 }
 
-func (zm ZoneManager) find(ip net.IP) *Zone { // returns nil on no match
+func (zm ZoneManager) Find(ip net.IP) *Zone { // returns nil on no match
 	for x := range zm {
 		if zm[x].contains(ip) {
 			return zm[x]
@@ -66,7 +66,7 @@ func (ae AuthorizationError) Error() string {
 }
 
 func (zm ZoneManager) Add(ip net.IP, user string, e Entry, authRequired bool) error {
-	zone := zm.find(ip)
+	zone := zm.Find(ip)
 	if zone == nil {
 		return NoMatchingZone(fmt.Sprintf("Network %s not found in any zone", ip))
 	}
@@ -91,7 +91,7 @@ func (zm ZoneManager) Add(ip net.IP, user string, e Entry, authRequired bool) er
 }
 
 func (zm ZoneManager) Check(ip net.IP, site Site) bool {
-	zone := zm.find(ip)
+	zone := zm.Find(ip)
 	if zone == nil {
 		return false // if no zones match, deny
 	}
@@ -115,7 +115,7 @@ func (zm ZoneManager) Check(ip net.IP, site Site) bool {
 }
 
 func (zm ZoneManager) RecentBlocks(ip net.IP, num int) []Site {
-	zone := zm.find(ip)
+	zone := zm.Find(ip)
 	if zone == nil {
 		return []Site{}
 	}
@@ -123,7 +123,7 @@ func (zm ZoneManager) RecentBlocks(ip net.IP, num int) []Site {
 }
 
 func (zm ZoneManager) Current(ip net.IP) []Entry {
-	zone := zm.find(ip)
+	zone := zm.Find(ip)
 	if zone == nil {
 		return []Entry{} // if no zones match, return an empty list
 	}
