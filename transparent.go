@@ -288,6 +288,7 @@ func whitelistService(r *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *h
 		}
 		duration, _ := time.ParseDuration(decDuration)
 		user := ""
+		redirectToURL := r.Form.Get("redirect") == "true"
 		if ldc.Address != "" {
 			session, err := store.Get(r, "session")
 			if err == nil {
@@ -309,7 +310,11 @@ func whitelistService(r *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *h
 			return responseFromResponseRecorder(r, w)
 		}
 		log.Printf("User %s from %s added site - %#v", user, ip, entry)
-		http.Redirect(w, r, decURL, http.StatusMovedPermanently)
+		if redirectToURL {
+			http.Redirect(w, r, decURL, http.StatusMovedPermanently)
+		} else {
+			http.Redirect(w, r, "/", http.StatusMovedPermanently)
+		}
 		return responseFromResponseRecorder(r, w)
 	default: // case: "/list"
 		list := wlm.RecentBlocks(userIP, 50) // get up to the last 50
@@ -401,13 +406,13 @@ func whitelistService(r *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *h
 				if zone != nil {
 					// only show items that are in the zone
 					// filter by IP
-					split := strings.Split(line," ")
+					split := strings.Split(line, " ")
 					logit := false
 					for _, s := range split {
-						if 
+
 					}
 					if logit {
-					currentList = append(currentList, line)
+						currentList = append(currentList, line)
 					}
 				} else if !ok {
 					// show all items since no ZoneManager is used
