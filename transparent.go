@@ -406,14 +406,14 @@ func whitelistService(r *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *h
 				if zone != nil {
 					// only show items that are in the zone
 					// filter by IP
-					split := strings.Split(line, " ")
-					logit := false
-					for _, s := range split {
+					//					split := strings.Split(line, " ")
+					//					logit := false
+					//					for _, s := range split {
 
-					}
-					if logit {
-						currentList = append(currentList, line)
-					}
+					//					}
+					//					if logit {
+					currentList = append(currentList, line)
+					//					}
 				} else if !ok {
 					// show all items since no ZoneManager is used
 					currentList = append(currentList, line)
