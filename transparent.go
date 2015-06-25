@@ -15,6 +15,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
@@ -215,6 +216,41 @@ func responseFromResponseRecorder(req *http.Request, w *httptest.ResponseRecorde
 	return req, resp
 }
 
+type firewallLine struct {
+	proto   string // TCP, UDP, or "" if none found
+	dstip   net.IP
+	srcip   net.IP
+	dstport int
+}
+
+func (fl firewallLine) String() string {
+	return fmt.Sprintf("-A fw-interfaces -s %s -d %s -p %s -m %s --dport %d -j ACCEPT", fl.srcip, fl.dstip, fl.proto, fl.proto, fl.dstport)
+}
+
+func parseFirewallLine(s string) (fl firewallLine, err error) {
+	t := strings.Split(s, " ")
+	for _, u := range t {
+		switch {
+		case strings.HasPrefix(u, "DST="):
+			fl.dstip = net.ParseIP(u[4:])
+		case strings.HasPrefix(u, "SRC="):
+			fl.srcip = net.ParseIP(u[4:])
+		case strings.HasPrefix(u, "DPT="):
+			fl.dstport, err = strconv.Atoi(u[4:])
+			if err != nil {
+				return
+			}
+		case strings.HasPrefix(u, "PROTO="):
+			fl.proto = strings.ToLower(u[6:])
+		}
+	}
+	if fl.dstip == nil || fl.srcip == nil || fl.dstport == 0 || fl.proto == "" {
+		err = fmt.Errorf("Error parsing firewall line from %s - %s", s, fl)
+		return
+	}
+	return
+}
+
 func whitelistService(r *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 	ip, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
@@ -378,46 +414,52 @@ func whitelistService(r *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *h
 		}
 		return responseFromResponseRecorder(r, w)
 	case "/network":
-		header := ""                          // any overarching message to show to the user
-		currentList := make([]string, 0, 100) // a decent estimate on starting lines
+		header := ""                               // any overarching message to show to the user
+		currentList := make([]firewallLine, 0, 10) // a decent estimate on starting lines
 		cmd := exec.Command(
 			"/usr/bin/sudo",
 			"/usr/bin/journalctl",
-			"-r",
+			"-r", // reverse, newest first
 			"-o", "short",
 			"--no-pager",
-			"-n", "1000",
+			"-n", "50", // only show the first 1000 matches
+			"-k", // only kernel messages
 		)
 		output, err := cmd.CombinedOutput()
 		if err != nil {
 			header = fmt.Sprintf("Error getting output - %v - %s", err, output)
 		} else {
 			lines := bufio.NewScanner(bytes.NewReader(output))
-			zm, ok := wlm.(*ZoneManager)
+			zm, ok := wlm.(ZoneManager)
 			var zone *Zone
 			if ok {
 				zone = zm.Find(userIP)
 				if zone == nil {
-					header = fmt.Sprintf("Zone not found for IP %s, no data", ip)
+					header = fmt.Sprintf("Zone not found for IP %s, no data", userIP)
 				}
 			}
-			for lines.Scan() {
-				line := lines.Text()
-				if zone != nil {
-					// only show items that are in the zone
-					// filter by IP
-					//					split := strings.Split(line, " ")
-					//					logit := false
-					//					for _, s := range split {
-
-					//					}
-					//					if logit {
-					currentList = append(currentList, line)
-					//					}
-				} else if !ok {
-					// show all items since no ZoneManager is used
-					currentList = append(currentList, line)
+			if zone != nil {
+			NextLine:
+				for lines.Scan() {
+					line := lines.Text()
+					//					 only show items that are in the zone
+					//					 filter by IP
+					fl, err := parseFirewallLine(line)
+					if err != nil {
+						log.Print(err)
+						continue
+					}
+					if zone.contains(fl.srcip) || zone.contains(fl.dstip) {
+						for _, tmpfl := range currentList {
+							if fl.String() == tmpfl.String() {
+								continue NextLine
+							}
+						}
+						currentList = append(currentList, fl)
+					}
 				}
+			} else {
+				log.Printf("No zone configured for ip - %s", userIP)
 			}
 		}
 
@@ -563,7 +605,8 @@ func main() {
 				cmd := exec.Command(
 					"/usr/bin/sudo",
 					"/usr/bin/journalctl",
-					"-n 20",
+					"-n", "20",
+					"-u", "dnsmasq",
 				)
 				output, err := cmd.CombinedOutput()
 				if err != nil {

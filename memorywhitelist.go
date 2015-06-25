@@ -119,6 +119,10 @@ func (twm *MemoryWhitelistManager) Check(ip net.IP, site Site) bool {
 	defer twm.RUnlock()
 	result := twm.internalCheck(site)
 	if !result && site.Referer != "pressl" {
+		refererURL, err := url.Parse(site.Referer)
+		if err == nil && twm.internalCheck(Site{URL: refererURL}) {
+			return true
+		}
 		twm.stack.Push(site)
 	}
 	return result
