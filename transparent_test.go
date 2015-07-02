@@ -187,7 +187,7 @@ func TestTemplates(t *testing.T) {
 	}
 	for j, s := range testingSites {
 		u, _ := url.Parse(s.URL)
-		result := wlm.Check(dummyIP, Site{URL: u, Referer: s.Referer})
+		result, _ := wlm.Check(dummyIP, Site{URL: u, Referer: s.Referer})
 		if result != s.Check {
 			t.Errorf("[%d] For URL %s - expected %t, got %t", j, u, s.Check, result)
 		}

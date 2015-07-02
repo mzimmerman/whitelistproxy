@@ -87,7 +87,9 @@ func TestZoneManager(t *testing.T) {
 
 	for j, s := range testingSites {
 		u, _ := url.Parse(s.url)
-		if want, got := s.check, zm.Check(s.ip, Site{URL: u}); want != got {
+		want := s.check
+		got, _ := zm.Check(s.ip, Site{URL: u})
+		if want != got {
 			t.Errorf("[%d] For URL %s - wanted %t, got %t", j, u, want, got)
 		}
 		if want, got := s.numBlocks, len(zm.RecentBlocks(s.ip, 50)); want != got {

@@ -114,21 +114,25 @@ func (twm *MemoryWhitelistManager) Add(ip net.IP, user string, entry Entry, auth
 	return nil
 }
 
-func (twm *MemoryWhitelistManager) Check(ip net.IP, site Site) bool {
+// returns true if Site is in the whitelist, returns true if TLS teardown should be skipped
+func (twm *MemoryWhitelistManager) Check(ip net.IP, site Site) (bool, bool) {
 	twm.RLock()
 	defer twm.RUnlock()
-	result := twm.internalCheck(site)
-	if !result && site.Referer != "pressl" {
+	result, skiptls := twm.internalCheck(site)
+	if !result && site.Referer != preTLSReferrer { // if it didn't pass already
 		refererURL, err := url.Parse(site.Referer)
-		if err == nil && twm.internalCheck(Site{URL: refererURL}) {
-			return true
+		if err == nil {
+			result, skiptls = twm.internalCheck(Site{URL: refererURL})
+			if !result {
+				twm.stack.Push(site)
+			}
 		}
-		twm.stack.Push(site)
 	}
-	return result
+	return result, skiptls
 }
 
-func (twm *MemoryWhitelistManager) internalCheck(site Site) bool {
+// returns true if match is found, secondarily returns true if TLS decoding should be skipped
+func (twm *MemoryWhitelistManager) internalCheck(site Site) (bool, bool) {
 	now := time.Now()
 	for _, x := range twm.entries {
 		if x.Expired(now) {
@@ -136,23 +140,23 @@ func (twm *MemoryWhitelistManager) internalCheck(site Site) bool {
 		}
 		if site.URL.Host == x.Host {
 			if x.Path == "" {
-				return true
+				return true, x.KeepTLS
 			}
 			if strings.HasPrefix(site.URL.Path, x.Path) {
 				if len(site.URL.Path) == len(x.Path) { // exact same path since prefix passes
-					return true
+					return true, x.KeepTLS
 				}
 				// x.Path must be at least one character longer since prefix passes and they're not equal
 				if site.URL.Path[len(x.Path)] == '?' || site.URL.Path[len(x.Path)] == '/' {
-					return true
+					return true, x.KeepTLS
 				}
 			}
 		}
 		if x.MatchSubdomains && strings.HasSuffix(site.URL.Host, "."+x.Host) {
-			return true
+			return true, x.KeepTLS
 		}
 	}
-	return false // no matches found
+	return false, false // no matches found
 }
 
 type Site struct {
@@ -176,7 +180,8 @@ func (twm *MemoryWhitelistManager) cleanStack(newEntry Entry) {
 		sites[i] = *twm.stack.Pop()
 	}
 	for i := len(sites) - 1; i >= 0; i-- {
-		if !twm.internalCheck(sites[i]) { // if it is still not allowed, push it back
+		res, _ := twm.internalCheck(sites[i])
+		if !res { // if it is still not allowed, push it back
 			twm.stack.Push(sites[i])
 		}
 	}

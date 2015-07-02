@@ -92,7 +92,7 @@ func benchManager(wlm WhiteListManager, b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		for j, s := range testingSites {
 			u, _ := url.Parse(s.URL)
-			result := wlm.Check(dummyIP, Site{URL: u})
+			result, _ := wlm.Check(dummyIP, Site{URL: u})
 			if result != s.Check {
 				b.Errorf("[%d] For URL %s - expected %t, got %t", j, u, s.Check, result)
 			}
@@ -144,7 +144,7 @@ func TestMemoryWhiteListManagerExpire(t *testing.T) {
 		if err != nil {
 			t.Error(err)
 		}
-		if got := twm.Check(dummyIP, Site{URL: parsed}); got != expected {
+		if got, _ := twm.Check(dummyIP, Site{URL: parsed}); got != expected {
 			t.Errorf("got %t, expected %t, for site - %s", got, expected, u)
 		}
 	}

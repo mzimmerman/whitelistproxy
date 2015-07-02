@@ -66,7 +66,7 @@ var wlm WhiteListManager
 
 type WhiteListManager interface {
 	Add(net.IP, string, Entry, bool) error // fails with wrong user
-	Check(net.IP, Site) bool
+	Check(net.IP, Site) (bool, bool)
 	RecentBlocks(net.IP, int) []Site
 	Current(ip net.IP) []Entry
 }
@@ -77,6 +77,7 @@ type Entry struct {
 	Host            string
 	MatchSubdomains bool
 	Path            string
+	KeepTLS         bool // if true, will not to tear down the TLS connection for Referrer tag validity
 	Creator         string
 	Created         time.Time
 	Expires         time.Time
@@ -179,7 +180,7 @@ var whiteListHandler goproxy.FuncReqHandler = func(req *http.Request, ctx *gopro
 	}
 
 	buf := bytes.Buffer{}
-	if ok := wlm.Check(userIP, Site{
+	if ok, _ := wlm.Check(userIP, Site{
 		URL:     req.URL,
 		Referer: req.Referer(),
 	}); ok {
@@ -528,6 +529,8 @@ func init() {
 	}
 }
 
+var preTLSReferrer = "pressl"
+
 func main() {
 	proxy := goproxy.NewProxyHttpServer()
 	proxy.Verbose = *verbose
@@ -548,6 +551,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Unable to load certificate - %v", err)
 	}
+	tlsConfig := goproxy.TLSConfigFromCA(&cert)
 
 	proxy.OnRequest(goproxy.DstHostIs(*proxy_hostname)).DoFunc(whitelistService)
 	proxy.OnRequest().DoFunc(whiteListHandler)
@@ -561,20 +565,24 @@ func main() {
 			panic(fmt.Sprintf("userip: %q is not IP", ip))
 		}
 		log.Printf("Handled connect from ip - %s - for host %s", ip, host)
-		if err != nil {
-			log.Printf("Error creating URL for host %s", host)
-		} else if host != *proxy_hostname && wlm.Check(userIP, Site{
-			URL:     ctx.Req.URL,
-			Referer: "pressl",
-		}) {
-			// don't tear down the SSL session
+		if host == *proxy_hostname {
+			// tear down the connection for the proxy itself
 			return &goproxy.ConnectAction{
-				Action: goproxy.ConnectAccept,
+				Action:    goproxy.ConnectMitm,
+				TLSConfig: goproxy.TLSConfigFromCA(&cert),
 			}, host + ":443"
+		}
+		res, skiptls := wlm.Check(userIP, Site{
+			URL:     ctx.Req.URL,
+			Referer: preTLSReferrer,
+		})
+		if res && skiptls {
+			// don't tear down the SSL session
+			return goproxy.OkConnect, host + ":443"
 		}
 		return &goproxy.ConnectAction{
 			Action:    goproxy.ConnectMitm,
-			TLSConfig: goproxy.TLSConfigFromCA(&cert),
+			TLSConfig: tlsConfig,
 		}, host + ":443"
 	})
 
