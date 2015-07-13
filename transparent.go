@@ -225,7 +225,19 @@ type firewallLine struct {
 }
 
 func (fl firewallLine) String() string {
-	return fmt.Sprintf("-A fw-interfaces -s %s -d %s -p %s -m %s --dport %d -j ACCEPT", fl.srcip, fl.dstip, fl.proto, fl.proto, fl.dstport)
+	return strings.Join(fl.Strings(), "\n")
+}
+
+func (fl firewallLine) Strings() []string {
+	mask := net.IPv4Mask(0xff, 0xff, 0xff, 0) // class C
+	ipnet := &net.IPNet{
+		IP:   fl.srcip.Mask(mask),
+		Mask: mask,
+	}
+	return []string{
+		fmt.Sprintf("-A fw-interfaces -s %s -d %s -p %s -m %s --dport %d -j ACCEPT", fl.srcip, fl.dstip, fl.proto, fl.proto, fl.dstport),
+		fmt.Sprintf("-A fw-interfaces -s %s -d %s -p %s -m %s --dport %d -j ACCEPT", ipnet, fl.dstip, fl.proto, fl.proto, fl.dstport),
+	}
 }
 
 func parseFirewallLine(s string) (fl firewallLine, err error) {

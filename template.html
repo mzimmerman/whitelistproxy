@@ -161,7 +161,9 @@
 		<table>
 			<tr><th>Entry</th></tr>
 			{{range .List}}
-				<tr><td>{{.}}</td></tr>
+				{{range .Strings}}
+					<tr><td>{{.}}</td></tr>
+				{{end}}
 			{{end}}
 		</table>
 	{{template "footer" .}}
