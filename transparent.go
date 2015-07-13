@@ -14,7 +14,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"os/exec"
+	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -276,7 +278,7 @@ func whitelistService(r *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *h
 
 	w := httptest.NewRecorder()
 	if strings.HasPrefix(r.URL.Path, "/js") {
-		http.StripPrefix("/js", http.FileServer(http.Dir("js"))).ServeHTTP(w, r)
+		staticFile(w, r)
 		return responseFromResponseRecorder(r, w)
 	}
 	w.Header().Add("Cache-Control", "no-cache")
@@ -488,7 +490,35 @@ func whitelistService(r *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *h
 	}
 }
 
+func staticFile(w http.ResponseWriter, r *http.Request) {
+	buf, ok := staticFiles[path.Base(r.URL.Path)]
+	if ok {
+		w.Write(buf)
+	} else {
+		log.Printf("Error locating static file - %s", r.URL.Path)
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+var staticFiles map[string][]byte
+
 func init() {
+	staticFiles = make(map[string][]byte)
+	files, err := ioutil.ReadDir("js")
+	if err != nil {
+		log.Fatalf("Error reading js dir - %v", err)
+	}
+	for _, f := range files {
+		if f.IsDir() {
+			continue
+		}
+		buf, err := ioutil.ReadFile("js" + string(os.PathSeparator) + f.Name())
+		if err != nil {
+			log.Fatalf("Error reading file - %v", f.Name())
+		}
+		log.Printf("Loaded filename into buffer - %s", f.Name())
+		staticFiles[f.Name()] = buf
+	}
 	cookie_pass := flag.String("cookiepass", "defaultpassword", "the encryptionkey used to manage session cookies")
 	ldap_address := flag.String("ldapaddress", "", "the address and port (addr:port) of the LDAP server")
 	ldap_bind_prefix := flag.String("ldapprefix", "uid=", "the prefix used before the userid in an LDAP bind")
@@ -514,7 +544,6 @@ func init() {
 		BindSuffix: *ldap_bind_suffix,
 	}
 
-	var err error
 	switch {
 	case *zones_filename != "" && *whitelist_filename != "":
 		panic(fmt.Sprintf("Cannot use both zonesfile and whitelistfile options - %s - %s", *zones_filename, *whitelist_filename))
