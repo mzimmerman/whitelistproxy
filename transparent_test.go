@@ -49,6 +49,14 @@ func TestRoots(t *testing.T) {
 	}
 }
 
+func TestExpiresEntry(t *testing.T) {
+	e := NewEntry("host.com", false, "", "", -time.Hour)
+	want, got := true, e.Expired(time.Now())
+	if want != got {
+		t.Errorf("want = %t, got = %t", want, got)
+	}
+}
+
 func TestSupercedes(t *testing.T) {
 	patterns := []Entry{
 		/*0*/ NewEntry("www.google.com", false, "", "", -time.Hour),
