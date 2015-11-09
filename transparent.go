@@ -356,6 +356,8 @@ func whitelistService(r *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *h
 				"Path":           r.Form.Get("path"),
 				"Host":           r.Form.Get("host"),
 				"MatchSubstring": r.Form.Get("match"),
+				"Duration":       r.Form.Get("duration"),
+				"Redirect":       r.Form.Get("redirect"),
 				"Error":          err,
 			})
 			return responseFromResponseRecorder(r, w)
